@@ -1,0 +1,130 @@
+# French tax parameters, versioned by effective date.
+#
+# This file is DATA. No rule logic lives here, and nothing in it is
+# constantized -- rules are registered in Ruby (app/models/tax/registry.rb) so
+# that editing this file can change a number but can never execute code.
+#
+# Every block carries `effective_from`. The engine picks the latest block whose
+# effective_from is <= the valuation date, so a historic valuation stays
+# correct after a rate change and a future rate can be committed early.
+#
+# A self-hoster who needs to correct a rate edits this file and restarts. That
+# is the whole point of keeping it out of the code.
+
+country: FR
+currency: EUR
+
+# ---------------------------------------------------------------------------
+# Prelevements sociaux (PS) on investment income.
+# Rose from 17.2% to 18.6% on 2026-01-01 under the LFSS 2026 (CSG 9.2 -> 10.6).
+# ---------------------------------------------------------------------------
+social_charges:
+  - effective_from: 2018-01-01
+    rate: 0.172
+    note: "CSG 9.2 + CRDS 0.5 + prelevement de solidarite 7.5"
+  - effective_from: 2026-01-01
+    rate: 0.186
+    note: "LFSS 2026: CSG raised 9.2 -> 10.6"
+
+# ---------------------------------------------------------------------------
+# Prelevement forfaitaire unique (PFU / "flat tax") -- income tax part only.
+# The headline 30% / 31.4% is this plus social_charges above. The engine adds
+# them rather than storing the total, so a PS change propagates automatically
+# and the two numbers can never drift apart.
+# ---------------------------------------------------------------------------
+flat_tax_income_component:
+  - effective_from: 2018-01-01
+    rate: 0.128
+
+# ---------------------------------------------------------------------------
+# Bareme de l'impot sur le revenu, per part of quotient familial.
+# `upto: null` marks the final open-ended bracket.
+# ---------------------------------------------------------------------------
+income_tax_brackets:
+  - effective_from: 2025-01-01
+    note: "revenus 2024"
+    brackets:
+      - { upto: 11497, rate: 0.00 }
+      - { upto: 28797, rate: 0.11 }
+      - { upto: 82341, rate: 0.30 }
+      - { upto: 177106, rate: 0.41 }
+      - { upto: null, rate: 0.45 }
+  - effective_from: 2026-01-01
+    note: "revenus 2025, confirmed against service-public.gouv.fr"
+    brackets:
+      - { upto: 11600, rate: 0.00 }
+      - { upto: 29579, rate: 0.11 }
+      - { upto: 84577, rate: 0.30 }
+      - { upto: 181917, rate: 0.41 }
+      - { upto: null, rate: 0.45 }
+
+# ---------------------------------------------------------------------------
+# Product parameters.
+#
+# A "product" is what a rule needs to know; it is NOT the same thing as a Sure
+# subtype. Sure files a Livret A and an ordinary taxable livret under the same
+# `Depository/savings` subtype, so the product cannot always be inferred and is
+# sometimes declared per account. See Tax::Subject#product.
+#
+# `ceiling` is on cumulative payments in (versements), never on current value.
+# ---------------------------------------------------------------------------
+products:
+  pea:
+    label: "PEA"
+    maturity_years: 5
+    ceiling: 150000
+  pea_pme:
+    label: "PEA-PME"
+    maturity_years: 5
+    ceiling: 225000
+  pea_jeune:
+    label: "PEA Jeune"
+    maturity_years: 5
+    ceiling: 20000
+  cto:
+    label: "Compte-titres ordinaire"
+  per:
+    label: "Plan d'epargne retraite"
+  livret_a:
+    label: "Livret A"
+    ceiling: 22950
+  ldds:
+    label: "LDDS"
+    ceiling: 12000
+  lep:
+    label: "Livret d'epargne populaire"
+    ceiling: 10000
+  livret_jeune:
+    label: "Livret Jeune"
+    ceiling: 1600
+  taxable_savings:
+    label: "Compte sur livret (taxable)"
+  cash:
+    label: "Cash"
+
+# ---------------------------------------------------------------------------
+# Known gaps. Surfaced in the report rather than silently ignored.
+# ---------------------------------------------------------------------------
+unmodelled:
+  - id: taux_historiques
+    applies_to: [pea, pea_pme, pea_jeune]
+    note: >
+      PEAs opened between 2013 and 2017 may have part of their gain taxed at the
+      social-charge rates in force when it accrued rather than at today's rate.
+      Not modelled; the engine warns when opened_on falls in range.
+  - id: per_exit_annuity
+    applies_to: [per]
+    note: >
+      Only the lump-sum exit (sortie en capital) is modelled. Annuity exit is a
+      different regime entirely.
+  - id: bareme_option_on_securities
+    applies_to: [cto]
+    note: >
+      The engine assumes the PFU. Electing the bareme can beat it at low income
+      and is not modelled.
+  - id: abattement_pre_2018
+    applies_to: [cto]
+    note: "Abattements for shares acquired before 2018 are not modelled."
+  - id: loss_carry_forward
+    applies_to: [cto, pea, pea_pme, pea_jeune]
+    note: "Realised losses offset gains for 10 years. Not modelled."
