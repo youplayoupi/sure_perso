@@ -9,7 +9,17 @@ nav_sections = [
       # Tax module. Hidden outside the countries it has rules for, on the same
       # test the main nav entry uses: a rule selector offering only French
       # rules is worse than no entry at all.
-      { label: t(".taxes_label"), path: settings_taxes_path, icon: "landmark", if: Tax.supported?(Current.family&.country) },
+      #
+      # The two sub-items are the pages the tax screen sends you to. They are
+      # here because arriving at either one from a bookmark otherwise leaves
+      # you with no visible way back up, and because a household that has been
+      # told to "correct the rate" should not have to guess that the rate lives
+      # behind Taxes.
+      { label: t(".taxes_label"), path: settings_taxes_path, icon: "landmark", if: Tax.supported?(Current.family&.country),
+        children: [
+          { label: t(".tax_rules_label"), path: settings_taxes_rules_path, icon: "scroll-text" },
+          { label: t(".tax_rates_label"), path: settings_taxes_rates_path, icon: "percent" }
+        ] },
       { label: t(".appearance_label"), path: settings_appearance_path, icon: "palette" },
       { label: t(".profile_label"), path: settings_profile_path, icon: "circle-user" },
       { label: t(".security_label"), path: settings_security_path, icon: "shield-check" },
@@ -54,6 +64,24 @@ nav_sections = [
     ]
   }
 ]
+
+# An item may carry `children:` -- sub-pages that belong to it rather than
+# entries of their own. They are shown only while their section is open, so
+# the rail does not carry a permanent second level for one entry, and so the
+# order of everything else is untouched for anyone not in that section.
+#
+# "Open" is asked of the children as well as the parent, rather than of the
+# parent alone. `page_active?` is a path-prefix match, so a child nested under
+# its parent's path lights the parent anyway and the first test would do -- but
+# that is a coincidence of the URLs, not a rule, and a child parked elsewhere
+# would silently never expand.
+visible_children = ->(item) {
+  children = (item[:children] || []).reject { |child| child[:if] == false }
+  return [] if children.empty?
+
+  open = page_active?(item[:path]) || children.any? { |child| page_active?(child[:path]) }
+  open ? children : []
+}
 %>
 
 <div class="space-y-4">
@@ -80,6 +108,19 @@ nav_sections = [
             <% next if item[:if] == false %>
             <li>
               <%= render "settings/settings_nav_item", name: item[:label], path: item[:path], icon: item[:icon] %>
+              <% children = visible_children.call(item) %>
+              <% if children.any? %>
+                <%# Nested inside the parent's own <li>, so the relationship is
+                    in the markup and not only in the indent -- a screen reader
+                    announces the sub-list as part of the item it belongs to. %>
+                <ul class="mt-1 space-y-1">
+                  <% children.each do |child| %>
+                    <li>
+                      <%= render "settings/settings_nav_item", name: child[:label], path: child[:path], icon: child[:icon], child: true %>
+                    </li>
+                  <% end %>
+                </ul>
+              <% end %>
             </li>
           <% end %>
         </ul>
@@ -108,6 +149,14 @@ nav_sections = [
           <li>
             <%= render "settings/settings_nav_item", name: item[:label], path: item[:path], icon: item[:icon] %>
           </li>
+          <%# Sub-items follow their parent as ordinary chips. This strip runs
+              sideways, where an indent says nothing; adjacency is the only
+              grouping it can express. %>
+          <% visible_children.call(item).each do |child| %>
+            <li>
+              <%= render "settings/settings_nav_item", name: child[:label], path: child[:path], icon: child[:icon] %>
+            </li>
+          <% end %>
         <% end %>
       <% end %>
       <li>

@@ -109,6 +109,70 @@ class Settings::TaxesControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to new_session_path
   end
 
+  # ---- Finding the module's other two pages -------------------------------
+  #
+  # Rules and Rates hang off Taxes in the settings sidebar. Asserted here, in
+  # the module's own file, because the sub-item machinery in
+  # `settings/_settings_nav` exists for this module and should be deleted with
+  # it. The selector `nav li ul li a` is the desktop rail's nested list and
+  # nothing else: the mobile strip puts its sub-items in the top-level `ul`,
+  # and the body links on this page are not inside a `nav`.
+
+  test "the sidebar carries Rules and Rates under Taxes while you are in that section" do
+    get settings_taxes_path
+
+    assert_response :ok
+    assert_select "nav li ul li a[href=?]", settings_taxes_rules_path, count: 1
+    assert_select "nav li ul li a[href=?]", settings_taxes_rates_path, count: 1
+
+    # And on a narrow screen too, where the rail is a horizontal strip and the
+    # sub-items are ordinary chips beside their parent. Two renderings of the
+    # same list, so this is the one place worth asserting both: a change that
+    # reaches only the desktop loop leaves phones with no way to the pages.
+    assert_select "#mobile-settings-nav a[href=?]", settings_taxes_rules_path, count: 1
+    assert_select "#mobile-settings-nav a[href=?]", settings_taxes_rates_path, count: 1
+  end
+
+  test "landing on Rules or Rates from a bookmark still shows the way back up" do
+    # The whole point of putting them in the rail. Someone who was told to
+    # "correct the rate" and saved the link arrives with no parent page in
+    # their history; if the rail collapsed to a bare Taxes entry they would
+    # have to guess that the other page exists.
+    [ settings_taxes_rules_path, settings_taxes_rates_path ].each do |path|
+      get path
+
+      assert_response :ok
+      assert_select "nav a[href=?]", settings_taxes_path, minimum: 1
+      assert_select "nav li ul li a[href=?]", settings_taxes_rules_path, count: 1
+      assert_select "nav li ul li a[href=?]", settings_taxes_rates_path, count: 1
+    end
+  end
+
+  test "elsewhere in settings the rail is unchanged" do
+    # Sub-items open with their section. A second level standing open for every
+    # reader would lengthen the rail permanently for one entry, and this is
+    # shared markup: the cost would fall on people who have no tax module.
+    get settings_preferences_path
+
+    assert_response :ok
+    assert_select "a[href=?]", settings_taxes_path, minimum: 1
+    assert_select "a[href=?]", settings_taxes_rules_path, count: 0
+    assert_select "a[href=?]", settings_taxes_rates_path, count: 0
+  end
+
+  test "a household outside the module's countries gets no tax entry at all" do
+    # Including the sub-items, which are reached through the parent's `if:` and
+    # so cannot outlive it.
+    @family.update!(country: "US", currency: "USD")
+
+    get settings_preferences_path
+
+    assert_response :ok
+    assert_select "a[href=?]", settings_taxes_path, count: 0
+    assert_select "a[href=?]", settings_taxes_rules_path, count: 0
+    assert_select "a[href=?]", settings_taxes_rates_path, count: 0
+  end
+
   # ---- Writing a per-product rule -----------------------------------------
 
   test "choosing a rule stores one row for that product" do

@@ -5,6 +5,8 @@ fr:
   settings:
     settings_nav:
       taxes_label: Fiscalité
+      tax_rules_label: Règles
+      tax_rates_label: Taux
     taxes:
       show:
         page_title: Fiscalité

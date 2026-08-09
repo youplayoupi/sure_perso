@@ -1,7 +1,13 @@
-<%# locals: (name:, path:, icon:) %>
+<%# locals: (name:, path:, icon:, child: false) %>
 
 <%= link_to path, class: class_names(
   "flex items-center gap-2 whitespace-nowrap px-3 py-2 rounded-lg text-sm focus-ring",
+  # A sub-item sits under its parent rather than beside it. The indent is extra
+  # left padding rather than a margin so the active and hover backgrounds still
+  # span the full width of the rail -- a short pill floating in from the left
+  # reads as a different kind of thing, not as a child of the row above it.
+  # `pl-9` lands the label under the parent's label, past its icon.
+  ("pl-9" if child),
   page_active?(path) ? "text-primary bg-container shadow-border-xs" : "text-secondary hover:bg-surface-hover border-transparent"
 ), aria: { current: ("page" if page_active?(path)) } do %>
   <%= icon(icon) if icon %>

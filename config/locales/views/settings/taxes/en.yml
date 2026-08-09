@@ -8,6 +8,11 @@ en:
   settings:
     settings_nav:
       taxes_label: Taxes
+      # The two sub-items under Taxes. Named for what a household came to do
+      # rather than for the model behind them -- "Rates" is the page you want
+      # when a rate has changed, and it is called that on the tax screen too.
+      tax_rules_label: Rules
+      tax_rates_label: Rates
     taxes:
       show:
         page_title: Taxes
