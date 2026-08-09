@@ -44,7 +44,12 @@
       <p class="text-sm text-secondary max-w-prose"><%= t(".mine_empty") %></p>
     <% end %>
 
-    <%= render DS::Button.new(
+    <%# DS::Link, not DS::Button. A DS::Button carrying an href renders through
+        `button_to`, which wraps it in a form and POSTs -- correct for the one
+        upstream caller, whose target is a POST route, and silently wrong here:
+        `rules/new` is GET only, so the post matched nothing and the button did
+        nothing at all. Going somewhere is a link. %>
+    <%= render DS::Link.new(
           text: t(".new_rule"),
           icon: "plus",
           variant: "secondary",

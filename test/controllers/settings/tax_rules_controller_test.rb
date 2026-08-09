@@ -96,6 +96,31 @@ class Settings::TaxRulesControllerTest < ActionDispatch::IntegrationTest
 
   # ---- The builder renders -------------------------------------------------
 
+  test "the button that opens the builder is a link to it, and a reader can follow it" do
+    # Regression. Every other test here reaches the builder by asking for its
+    # path directly, so all of them passed while the only route a household had
+    # to it did nothing at all: the button was a DS::Button carrying an href,
+    # which renders through `button_to` and therefore POSTs. `rules/new` is GET
+    # only, the post matched no route, and Turbo swallowed the failure.
+    #
+    # Asserted as "an anchor whose href is the builder" rather than by naming
+    # the component, because what matters is what a browser does with it.
+    # Following it and demanding the form comes back makes this a test of
+    # reachability rather than of markup.
+    get settings_taxes_rules_path
+
+    assert_response :ok
+    assert_select "a[href=?]", new_settings_taxes_rule_path, count: 1
+
+    # And nothing on the page tries to reach the builder by posting to it.
+    assert_select "form[action=?]", new_settings_taxes_rule_path, count: 0
+
+    get new_settings_taxes_rule_path
+
+    assert_response :ok
+    assert_select "form[action=?]", settings_taxes_rules_path
+  end
+
   test "the builder offers exactly the choices the validator accepts" do
     # A form that offered a base the formula rejects would produce a rule that
     # cannot be saved and an error nobody can act on. Both lists come from the
