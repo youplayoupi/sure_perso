@@ -15,6 +15,14 @@
             total: @held.size) %>
     </p>
 
+    <%# The selectors below name rules but cannot explain them: "PEA (gain net,
+        5-year clock)" is a claim the reader has no way to check from here. The
+        library is where that claim is spelled out in full, which makes this
+        link part of the choice rather than a footnote to it. %>
+    <p class="text-sm">
+      <%= link_to t(".library_link"), settings_taxes_rules_path, class: "text-link hover:underline" %>
+    </p>
+
     <% if @held.any? %>
       <%= render "settings/taxes/products", entries: @held %>
     <% else %>

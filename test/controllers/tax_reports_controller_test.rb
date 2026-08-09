@@ -105,6 +105,35 @@ class TaxReportsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "a corrected rate is the rate the report computes with" do
+    # A correction that shows on the settings page and changes no figure would
+    # be worse than offering no corrections at all, because it looks like it
+    # worked. Asserted on the figures the page prints rather than on the
+    # markup around them: the report is drawn twice, once shipped and once
+    # corrected, and the two have to differ.
+    #
+    # The fixture household is taxed nothing at all -- no rule is assigned and
+    # no account has declared what was paid into it -- so a correction could
+    # not move a figure whatever the controller did. One taxable account is the
+    # precondition for the assertion, not decoration on it.
+    taxable_account
+
+    before = tax_totals
+    assert_not_equal "€0.00", before.second, "nothing is taxed, so nothing can be corrected"
+
+    # Dated to the entry currently in force, not to the start of the schedule.
+    # Correcting 2018 would change nothing today, and the test would fail
+    # against a controller that is working perfectly.
+    Tax::RateCorrection.create!(
+      family: @family,
+      country: "FR",
+      overrides: { "social_charges" => [ { "effective_from" => "2026-01-01", "rate" => 0.99 } ] }
+    )
+
+    assert_not_equal before, tax_totals,
+                     "the report ignored the family's rate correction"
+  end
+
   test "signed out, the page is not reachable" do
     sign_out
 
@@ -116,5 +145,34 @@ class TaxReportsControllerTest < ActionDispatch::IntegrationTest
   private
     def sign_out
       @user.sessions.each { |session| delete session_path(session) }
+    end
+
+    # An account the report can actually put a figure against: a rule that
+    # taxes the gain, and a declared amount paid in for the gain to be measured
+    # over. Without both, every result is a refusal and every total is zero.
+    def taxable_account
+      @taxable_account ||= @family.accounts.visible
+                                  .where(accountable_type: "Investment")
+                                  .first
+                                  .tap do |account|
+        Tax::CustomRule.create!(
+          family: @family, account: account, kind: "fr_securities"
+        )
+        Tax::Profile.create!(
+          account: account, opened_on: Date.new(2015, 1, 1), paid_in: 1000
+        )
+      end
+    end
+
+    # The four headline figures, read off the page rather than out of an
+    # instance variable, so the assertion is about what the household is shown
+    # and not about how the controller happens to be wired.
+    def tax_totals
+      get tax_report_path
+      assert_response :ok
+
+      figures = css_select("p.text-xl").map { |node| node.text.strip }
+      assert figures.any?, "the report rendered no headline figures at all"
+      figures
     end
 end

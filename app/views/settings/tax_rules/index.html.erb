@@ -1,0 +1,101 @@
+<%= content_for :page_title, t(".page_title") %>
+
+<%= settings_section title: t(".mine_title"), subtitle: t(".mine_subtitle") do %>
+  <div class="@container space-y-4">
+    <% if @mine.any? %>
+      <ul class="space-y-4">
+        <% @mine.each do |rule| %>
+          <li class="rounded-xl border border-secondary border-xs p-4 space-y-3">
+            <div class="flex flex-col gap-2 @xl:flex-row @xl:items-start @xl:justify-between">
+              <div class="min-w-0">
+                <p class="text-sm font-medium text-primary truncate">
+                  <%= rule.to_rule&.name.presence || t(".untitled") %>
+                </p>
+                <p class="text-xs text-secondary"><%= t(".applies_to", target: rule.target_label) %></p>
+              </div>
+
+              <div class="flex items-center gap-3 shrink-0">
+                <%= link_to t(".edit"),
+                            edit_settings_taxes_rule_path(rule),
+                            class: "text-sm text-link hover:underline" %>
+                <%= button_to t(".delete"),
+                              settings_taxes_rule_path(rule),
+                              method: :delete,
+                              class: "text-sm text-destructive hover:underline",
+                              form: { data: { turbo_confirm: t(".delete_confirm") } } %>
+              </div>
+            </div>
+
+            <%= render "settings/tax_rules/formula",
+                       presenter: tax_formula_presenter(rule.formula) %>
+
+            <%# A rule that does not add up is stored anyway -- the engine
+                refuses it per account rather than taking down the report -- so
+                the page that manages it has to be the place you find out. %>
+            <% unless rule.formula.valid? %>
+              <p class="text-xs text-warning max-w-prose">
+                <%= t(".invalid", problems: rule.formula.errors.to_sentence) %>
+              </p>
+            <% end %>
+          </li>
+        <% end %>
+      </ul>
+    <% else %>
+      <p class="text-sm text-secondary max-w-prose"><%= t(".mine_empty") %></p>
+    <% end %>
+
+    <%= render DS::Button.new(
+          text: t(".new_rule"),
+          icon: "plus",
+          variant: "secondary",
+          href: new_settings_taxes_rule_path
+        ) %>
+  </div>
+<% end %>
+
+<%# The shipped rules, read-only.
+
+    They are here rather than only on the assignment page because a name in a
+    dropdown -- "PEA (gain net, 5-year clock)" -- is a claim the reader has no
+    way to check. Rendered from the same declared formulas that
+    test/models/tax/formula_test.rb runs against the hand-written arithmetic,
+    so what this section says is what the engine does, to the cent, or the
+    suite is red. %>
+<%= settings_section title: t(".built_in_title"), subtitle: t(".built_in_subtitle") do %>
+  <div class="@container space-y-4">
+    <ul class="space-y-4">
+      <% @built_ins.each do |rule_id, (klass, _description)| %>
+        <li class="rounded-xl border border-secondary border-xs p-4 space-y-3">
+          <div class="min-w-0">
+            <p class="text-sm font-medium text-primary">
+              <%= tax_rule_label(rule_id, klass.label) %>
+            </p>
+            <% if (description = tax_rule_description(rule_id)) %>
+              <p class="text-xs text-secondary max-w-prose"><%= description %></p>
+            <% end %>
+          </div>
+
+          <% if klass.formula %>
+            <%= render "settings/tax_rules/formula",
+                       presenter: tax_formula_presenter(klass.formula) %>
+          <% else %>
+            <%# No declared formula means the rule's arithmetic cannot be shown
+                here. Saying so is the honest answer; rendering an empty table
+                would read as "this rule taxes nothing". %>
+            <p class="text-xs text-subdued"><%= t(".no_formula") %></p>
+          <% end %>
+        </li>
+      <% end %>
+    </ul>
+  </div>
+<% end %>
+
+<%= settings_section title: t(".about_title") do %>
+  <div class="text-sm text-secondary space-y-3 max-w-prose">
+    <p><%= t(".about_body") %></p>
+    <p><%= t(".about_rates") %></p>
+    <p>
+      <%= link_to t(".about_assign_link"), settings_taxes_path, class: "text-link hover:underline" %>
+    </p>
+  </div>
+<% end %>

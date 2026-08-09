@@ -92,6 +92,45 @@ module Tax
       assert_match(/not between 0 and 1/, formula.errors.join)
     end
 
+    # Building a Term runs over stored data, once per account, on a page whose
+    # other figures are fine. An unreadable rate has to be an error the reader
+    # can act on rather than an exception that takes the page down -- the same
+    # bargain the unreadable dates already make.
+    def test_a_rate_that_is_not_a_number_is_an_error_rather_than_an_exception
+      formula = Tax::Formula.new(
+        terms: [ { base: "full_value", rate: "literal", literal_rate: "abc" } ]
+      )
+
+      refute formula.valid?
+      assert_match(/"abc" is not a number/, formula.errors.join)
+    end
+
+    # And it survives storage, so the error comes back with it. Dropping the
+    # unreadable value on the way out would have the formula validate cleanly
+    # on the second load, which is how a rejected edit becomes an accepted one.
+    def test_an_unreadable_rate_survives_a_round_trip
+      original = Tax::Formula.new(
+        terms: [ { base: "full_value", rate: "literal", literal_rate: "abc" } ]
+      )
+      reloaded = Tax::Formula.from(JSON.parse(JSON.generate(original.to_h)))
+
+      refute reloaded.valid?
+      assert_match(/is not a number/, reloaded.errors.join)
+    end
+
+    # A percentage typed into a term that takes a named rate is a contradiction
+    # rather than a stray keystroke: one of the two fields is wrong and nothing
+    # here can tell which.
+    def test_a_percentage_on_a_named_rate_survives_a_round_trip_too
+      original = Tax::Formula.new(
+        terms: [ { base: "full_value", rate: "flat_tax", literal_rate: "0.1" } ]
+      )
+      reloaded = Tax::Formula.from(JSON.parse(JSON.generate(original.to_h)))
+
+      refute reloaded.valid?
+      assert_match(/belongs only on a literal rate/, reloaded.errors.join)
+    end
+
     def test_a_clock_term_without_a_maturity_period_is_rejected
       formula = Tax::Formula.new(
         terms: [ { base: "gain_over_paid_in", rate: "flat_tax", condition: "mature" } ]

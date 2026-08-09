@@ -29,6 +29,7 @@ module TaxEngineTestHelper
   # that inherits from Rules::Base has to see Rules::Base first.
   ENGINE = %w[
     tax
+    tax/vocabulary
     tax/rate_table
     tax/rate_overlay
     tax/assumptions
@@ -36,6 +37,7 @@ module TaxEngineTestHelper
     tax/result
     tax/treatment
     tax/formula
+    tax/formula_presenter
     tax/rules/base
     tax/rules/composed
     tax/rules/unknown

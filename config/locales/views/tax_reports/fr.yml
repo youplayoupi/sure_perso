@@ -52,6 +52,7 @@ fr:
         Sure connaît %{count} autres produits que vous ne détenez pas. Ils sont
         listés en entier dans les réglages.
       coverage_configure: Modifier ces règles
+      coverage_rules_link: Ce que fait chaque règle
       coverage_custom: (votre règle)
       coverage_suggested: essayer %{rule}
       coverage_none: aucune règle

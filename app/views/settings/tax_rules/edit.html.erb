@@ -1,0 +1,10 @@
+<%= content_for :page_title, t(".page_title") %>
+
+<%= settings_section title: t(".title"), subtitle: t(".subtitle") do %>
+  <div class="@container">
+    <%= render "settings/tax_rules/form", rule: @rule,
+               accounts: @accounts,
+               held_products: @held_products,
+               other_products: @other_products %>
+  </div>
+<% end %>

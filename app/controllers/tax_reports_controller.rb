@@ -45,8 +45,15 @@ class TaxReportsController < ApplicationController
       @builder ||= Tax::SubjectBuilder.new(Current.family)
     end
 
+    # The family's rates, not the shipped ones.
+    #
+    # A household that has corrected a rate has said, in as many words, that
+    # the figure in the file is wrong for them. Computing the report from the
+    # shipped table anyway would leave the correction visible on the settings
+    # page and absent from every number it was made to fix -- which is worse
+    # than not offering corrections at all, because it looks like it worked.
     def rates
-      @rates ||= Tax.rate_table(@country)
+      @rates ||= Tax.rate_table_for(Current.family, @country)
     end
 
     def valuation_date

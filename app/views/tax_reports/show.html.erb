@@ -162,8 +162,16 @@
               the link the settings page is only reachable by knowing it is
               there, which for a page that exists to answer "why is this
               product uncovered?" is the wrong way round. %>
-          <%= link_to t(".coverage_configure"), settings_taxes_path,
-                      class: "text-sm text-link hover:underline shrink-0" %>
+          <%# Two links, because the column below raises two different
+              questions. "Uncovered" is answered by setting a rule; a rule name
+              sitting beside a figure -- "PEA (gain net, 5-year clock)" -- is
+              answered by reading what that rule actually does. %>
+          <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 shrink-0">
+            <%= link_to t(".coverage_configure"), settings_taxes_path,
+                        class: "text-sm text-link hover:underline" %>
+            <%= link_to t(".coverage_rules_link"), settings_taxes_rules_path,
+                        class: "text-sm text-link hover:underline" %>
+          </div>
         </div>
 
         <%# Only the products this household holds. Sure's subtype catalogue is

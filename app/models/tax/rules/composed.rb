@@ -68,7 +68,7 @@ module Tax
         end
 
         def refuse_missing(subject, missing)
-          words = missing.map { |f| FACT_NAMES.fetch(f, f.to_s) }
+          words = missing.map { |f| Vocabulary.fact(f) }
 
           refuse(
             subject,
@@ -98,12 +98,6 @@ module Tax
             ]
           )
         end
-
-        FACT_NAMES = {
-          paid_in: "the total paid in",
-          cost_basis: "the cost basis of what is held",
-          opened_on: "the date the account was opened"
-        }.freeze
 
         # The deducted portion, with absence read the expensive way.
         def resolve_deducted(subject, warnings)
@@ -263,27 +257,11 @@ module Tax
         end
 
         def plain_english_bases
-          to_sentence(formula.terms.map { |t| BASE_WORDS.fetch(t.base, t.base) }.uniq)
+          to_sentence(formula.terms.map { |t| Vocabulary.base(t.base) }.uniq)
         end
 
-        BASE_WORDS = {
-          "full_value" => "the whole balance",
-          "gain_over_paid_in" => "the gain over what was paid in",
-          "gain_over_cost_basis" => "the gain over cost basis",
-          "paid_in" => "the payments in",
-          "paid_in_deducted" => "the deducted payments in",
-          "paid_in_not_deducted" => "the payments in that were not deducted"
-        }.freeze
-
-        # ActiveSupport's to_sentence would do, and is exactly the kind of
-        # thing this engine may not reach for: it has to load into a bare Ruby
-        # process. Three lines here is the price of that.
         def to_sentence(items)
-          list = Array(items).map(&:to_s)
-          return "" if list.empty?
-          return list.first if list.one?
-
-          "#{list[0..-2].join(', ')} and #{list.last}"
+          Vocabulary.to_sentence(items)
         end
     end
   end

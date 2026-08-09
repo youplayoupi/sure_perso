@@ -1,0 +1,117 @@
+<%# locals: (rule:, accounts:, held_products:, other_products:) %>
+<%#
+  The builder.
+
+  It writes a Tax::Formula, which is a list of terms and an optional maturity
+  clock, and nothing else -- there is no expression to type and nothing here is
+  ever evaluated. Every field is a choice from a closed list or a number, so
+  the worst a wrong answer can produce is a wrong figure arrived at by
+  arithmetic the engine can perform and explain, rather than a rule that does
+  something nobody can read back.
+
+  The motivating shape is the PER: one rate on the payments in, another on the
+  gain. That is two terms, which is why the row below repeats.
+%>
+
+<% formula = rule.formula %>
+
+<%= styled_form_with model: rule,
+                     url: rule.persisted? ? settings_taxes_rule_path(rule) : settings_taxes_rules_path,
+                     method: rule.persisted? ? :patch : :post,
+                     scope: :tax_rule,
+                     class: "space-y-6",
+                     data: { controller: "tax-formula" } do |f| %>
+
+  <% if rule.errors.any? %>
+    <%= render "shared/form_errors", model: rule %>
+  <% end %>
+
+  <section class="space-y-3">
+    <h3 class="text-sm font-medium text-primary"><%= t(".name_title") %></h3>
+    <%= text_field_tag "tax_rule[name]",
+                       rule.to_rule&.name,
+                       class: "form-field__input",
+                       placeholder: t(".name_placeholder"),
+                       aria: { label: t(".name_title") } %>
+    <p class="text-xs text-subdued max-w-prose"><%= t(".name_hint") %></p>
+  </section>
+
+  <%# Where it applies, as one field, because the model insists a rule targets
+      exactly one thing. Two fields and a radio could contradict each other;
+      one select cannot. %>
+  <section class="space-y-3">
+    <h3 class="text-sm font-medium text-primary"><%= t(".target_title") %></h3>
+    <%= select_tag "tax_rule[target]",
+                   grouped_options_for_select(
+                     tax_target_choices(accounts, held_products, other_products),
+                     tax_target_value(rule)
+                   ),
+                   include_blank: t(".target_blank"),
+                   class: "form-field__input",
+                   aria: { label: t(".target_title") } %>
+    <p class="text-xs text-subdued max-w-prose"><%= t(".target_hint") %></p>
+  </section>
+
+  <section class="space-y-3">
+    <div class="flex items-center justify-between gap-2">
+      <h3 class="text-sm font-medium text-primary"><%= t(".terms_title") %></h3>
+    </div>
+    <p class="text-xs text-subdued max-w-prose"><%= t(".terms_hint") %></p>
+
+    <%# The row the Stimulus controller clones. Rendered by the server so that
+        an added row is identical to a stored one -- including its labels, its
+        options and its translations -- rather than being assembled in
+        JavaScript and drifting from it. %>
+    <template data-tax-formula-target="termTemplate">
+      <%= render "settings/tax_rules/term", index: "IDX_PLACEHOLDER", term: nil %>
+    </template>
+
+    <ul data-tax-formula-target="termsList" class="space-y-3">
+      <% formula.terms.each_with_index do |term, index| %>
+        <%= render "settings/tax_rules/term", index: index, term: term %>
+      <% end %>
+    </ul>
+
+    <%= render DS::Button.new(
+          text: t(".add_term"),
+          icon: "plus",
+          variant: "ghost",
+          type: "button",
+          data: { action: "tax-formula#addTerm" }
+        ) %>
+  </section>
+
+  <%# Only load-bearing when some term is conditional on it, and kept on the
+      rule rather than on the term because a wrapper has one clock. Two terms
+      disagreeing about when it strikes would be a bug with no sensible
+      reading. %>
+  <section class="space-y-3">
+    <h3 class="text-sm font-medium text-primary"><%= t(".maturity_title") %></h3>
+    <%= number_field_tag "tax_rule[maturity_years]",
+                         formula.maturity_years,
+                         min: 1,
+                         step: 1,
+                         class: "form-field__input @xl:w-40",
+                         aria: { label: t(".maturity_title") } %>
+    <p class="text-xs text-subdued max-w-prose"><%= t(".maturity_hint") %></p>
+  </section>
+
+  <%# Notes end up in the report's warnings beside the figure, which is the
+      point: an assumption a rule rests on belongs next to the number it
+      produced, not on a settings page nobody rereads. %>
+  <section class="space-y-3">
+    <h3 class="text-sm font-medium text-primary"><%= t(".notes_title") %></h3>
+    <%= text_area_tag "tax_rule[notes]",
+                      formula.notes.join("\n"),
+                      rows: 3,
+                      class: "form-field__input",
+                      placeholder: t(".notes_placeholder"),
+                      aria: { label: t(".notes_title") } %>
+    <p class="text-xs text-subdued max-w-prose"><%= t(".notes_hint") %></p>
+  </section>
+
+  <div class="flex items-center gap-3">
+    <%= f.submit rule.persisted? ? t(".save") : t(".create") %>
+    <%= link_to t(".cancel"), settings_taxes_rules_path, class: "text-sm text-secondary hover:underline" %>
+  </div>
+<% end %>

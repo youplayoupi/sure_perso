@@ -124,13 +124,22 @@ module Tax
                      opened_from: nil, opened_until: nil)
         @base = base.to_s
         @rate = rate.to_s
-        @literal_rate = literal_rate.nil? ? nil : BigDecimal(literal_rate.to_s)
         @condition = condition.to_s
 
-        # The raw values are kept beside the parsed ones so that an unreadable
-        # date survives a round trip through storage. Dropping it would make
+        # The raw values are kept beside the parsed ones so that unreadable
+        # input survives a round trip through storage. Dropping it would make
         # the formula look valid the second time it was loaded, which is how a
         # rejected edit quietly becomes an accepted one.
+        #
+        # Parsed leniently, too, and for a stronger reason than tidiness. This
+        # constructor runs over stored data -- on the report, for every account
+        # -- and `BigDecimal("abc")` raises. A row with junk in it has to
+        # degrade to a refusal the way every other bad input here does, because
+        # the alternative is one corrupt rule taking down a page of figures
+        # that are all fine.
+        @literal_rate_raw = presence(literal_rate)
+        @literal_rate = to_rate(@literal_rate_raw)
+
         @opened_from_raw = presence(opened_from)
         @opened_until_raw = presence(opened_until)
         @opened_from = to_date(@opened_from_raw)
@@ -150,9 +159,13 @@ module Tax
         )
       end
 
+      # Keyed on the raw value rather than on `literal?`, so that a rate typed
+      # into the wrong box comes back on reload and the error naming it comes
+      # back with it. Emitting only what the term turned out to need would let
+      # a rejected edit validate cleanly the second time it was loaded.
       def to_h
         { "base" => base, "rate" => rate, "condition" => condition }.tap do |h|
-          h["literal_rate"] = literal_rate.to_s("F") if literal?
+          h["literal_rate"] = literal_rate&.to_s("F") || @literal_rate_raw.to_s if @literal_rate_raw
           h["opened_from"] = @opened_from_raw.to_s if @opened_from_raw
           h["opened_until"] = @opened_until_raw.to_s if @opened_until_raw
         end
@@ -198,8 +211,12 @@ module Tax
         problems << "unknown base #{base.inspect}" unless BASES.key?(base)
         problems << "unknown rate #{rate.inspect}" unless RATES.include?(rate)
         problems << "unknown condition #{condition.inspect}" unless CONDITIONS.include?(condition)
-        problems << "a literal rate needs a percentage" if literal? && literal_rate.nil?
-        problems << "a percentage belongs only on a literal rate" if !literal? && !literal_rate.nil?
+        problems << "a literal rate needs a percentage" if literal? && @literal_rate_raw.nil?
+        problems << "a percentage belongs only on a literal rate" if !literal? && !@literal_rate_raw.nil?
+
+        if @literal_rate_raw && literal_rate.nil?
+          problems << "#{@literal_rate_raw.to_s.strip.inspect} is not a number"
+        end
 
         if literal? && literal_rate && (literal_rate.negative? || literal_rate > 1)
           problems << "a rate of #{literal_rate.to_s('F')} is not between 0 and 1"
@@ -230,6 +247,18 @@ module Tax
 
         def presence(value)
           value.nil? || value.to_s.strip.empty? ? nil : value
+        end
+
+        # Returns nil rather than raising, so an unreadable rate is one more
+        # line in `errors` beside the unreadable dates instead of an exception
+        # thrown from inside a loop over every account on the report.
+        def to_rate(value)
+          return nil if value.nil?
+          return value if value.is_a?(BigDecimal)
+
+          BigDecimal(value.to_s.strip)
+        rescue ArgumentError, TypeError
+          nil
         end
 
         # Returns nil rather than raising, so an unreadable date is one more

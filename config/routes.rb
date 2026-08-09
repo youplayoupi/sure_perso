@@ -340,6 +340,13 @@ Rails.application.routes.draw do
     resource :taxes, only: %i[show update] do
       post "pinned", to: "taxes#create", as: :pinned_rules
       delete "pinned/:id", to: "taxes#destroy", as: :pinned_rule
+
+      # The rule library: what every rule actually does, and a builder for
+      # writing one. Nested under taxes because a rule means nothing without
+      # the page that says which product it applies to, and a reader who lands
+      # on one should be one click from the other.
+      resources :rules, controller: "tax_rules",
+                        only: %i[index new create edit update destroy]
     end
     get "bank_sync", to: redirect("/settings/providers", status: 301)
     resource :providers, only: %i[show update] do

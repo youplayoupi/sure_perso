@@ -49,6 +49,7 @@ en:
         Sure knows about %{count} other products you do not hold. They are
         listed in full on the settings page.
       coverage_configure: Change these rules
+      coverage_rules_link: What each rule does
       coverage_custom: (your rule)
       coverage_suggested: try %{rule}
       coverage_none: no rule

@@ -17,6 +17,7 @@ fr:
           une règle écrite pour autre chose.
         coverage_summary: >-
           %{covered} des %{total} produits que vous détenez ont une règle.
+        library_link: Voir ce que fait chaque règle, ou écrire la vôtre
         no_products: >-
           Aucun compte que le rapport puisse imposer : il n'y a donc rien à
           régler pour l'instant.

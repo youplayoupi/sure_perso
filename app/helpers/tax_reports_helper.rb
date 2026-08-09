@@ -80,8 +80,11 @@ module TaxReportsHelper
   # adding a product to config/tax/*.yml puts it in this dropdown with no Ruby
   # change. That is the same list Tax::Profile validates against, so the form
   # cannot offer a value the model would then reject.
+  # Through `rate_table_for`, so that a product a family added in their own
+  # corrections is offered here too. Reading the shipped table instead would
+  # let someone define a product and then be unable to select it.
   def product_choices(country = nil)
-    rates = Tax.rate_table(country.presence || Current.family&.country.presence || Tax::DEFAULT_COUNTRY)
+    rates = Tax.rate_table_for(Current.family, country)
     rates.product_names.map { |name| [ rates.product_label(name), name ] }
   rescue Tax::Error
     []
