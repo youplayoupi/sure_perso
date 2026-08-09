@@ -6,6 +6,10 @@ nav_sections = [
       { label: t(".accounts_label"), path: accounts_path, icon: "layers" },
       { label: t(".bank_sync_label"), path: settings_providers_path, icon: "banknote", if: Current.user&.admin? },
       { label: t(".preferences_label"), path: settings_preferences_path, icon: "bolt" },
+      # Tax module. Hidden outside the countries it has rules for, on the same
+      # test the main nav entry uses: a rule selector offering only French
+      # rules is worse than no entry at all.
+      { label: t(".taxes_label"), path: settings_taxes_path, icon: "landmark", if: Tax.supported?(Current.family&.country) },
       { label: t(".appearance_label"), path: settings_appearance_path, icon: "palette" },
       { label: t(".profile_label"), path: settings_profile_path, icon: "circle-user" },
       { label: t(".security_label"), path: settings_security_path, icon: "shield-check" },

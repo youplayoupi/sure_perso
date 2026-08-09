@@ -336,6 +336,11 @@ Rails.application.routes.draw do
     resource :ai_prompts, only: :show
     resource :llm_usage, only: :show
     resource :guides, only: :show
+    # Tax module. See the `resource :tax_report` block further down.
+    resource :taxes, only: %i[show update] do
+      post "pinned", to: "taxes#create", as: :pinned_rules
+      delete "pinned/:id", to: "taxes#destroy", as: :pinned_rule
+    end
     get "bank_sync", to: redirect("/settings/providers", status: 301)
     resource :providers, only: %i[show update] do
       collection do
@@ -383,9 +388,18 @@ Rails.application.routes.draw do
   resource :plan, only: :show
 
   # After-tax reporting. One read-only page, plus a form per account for
-  # declaring the facts Sure has nowhere else to store. This block and the nav
-  # entry in layouts/application.html.erb are the only two edits this module
-  # makes to files that already existed.
+  # declaring the facts Sure has nowhere else to store. Configuration -- which
+  # rule applies to which of Sure's products -- lives under the settings
+  # namespace above, next to the other things a family sets once.
+  #
+  # Edits this module makes to files that already existed, in full: this block,
+  # the `resource :taxes` line in the settings namespace, the nav entry in
+  # layouts/application.html.erb and the one in settings/_settings_nav.html.erb.
+  # Three files, additions only. The labels those two entries read are not
+  # among them -- they live in the module's own locale files, because I18n
+  # deep-merges and a key resolves the same wherever it was declared.
+  # Everything else is a new file, so removing the module is a delete rather
+  # than an unpick.
   resource :tax_report, only: :show
   namespace :tax do
     resources :accounts, only: [] do

@@ -360,8 +360,49 @@ module Tax
       @coverage = Coverage.new(Registry.new(country: "FR"))
     end
 
-    test "it enumerates every type Sure knows about" do
-      assert_equal Accountable::TYPES.sort, @coverage.by_type.keys.sort
+    test "it enumerates every type Sure knows about that the report can tax" do
+      assert_equal (Accountable::TYPES - SubjectBuilder::EXCLUDED_TYPES).sort,
+                   @coverage.by_type.keys.sort
+    end
+
+    # The two lists are derived from one another, so this is really asserting
+    # that nobody has restated the exclusions somewhere. Offering a tax rule
+    # for a credit card would be offering a rule that can never fire, and
+    # counting it as an uncovered product would understate coverage for a
+    # reason that has nothing to do with tax.
+    test "liabilities are out of scope rather than uncovered" do
+      assert SubjectBuilder::EXCLUDED_TYPES.any?
+      assert_empty @coverage.entries.map(&:accountable_type) & SubjectBuilder::EXCLUDED_TYPES
+    end
+
+    test "an explicit type list still overrides the default" do
+      only_crypto = Coverage.new(Registry.new(country: "FR"), types: %w[Crypto])
+
+      assert_equal %w[Crypto], only_crypto.by_type.keys
+    end
+
+    test "partitioning splits held products from the rest of Sure's catalogue" do
+      held, rest = @coverage.partition_by(Set[[ "Investment", "pea" ]])
+
+      assert_equal [ [ "Investment", "pea" ] ], held.map { |e| [ e.accountable_type, e.subtype ] }
+      assert_operator rest.size, :>, 50, "Sure's subtype catalogue got smaller than expected"
+    end
+
+    test "partitioning loses nothing" do
+      # The disclosure on the settings page is the module's promise that a
+      # subtype added by a future Sure release still appears. That only holds
+      # if the two halves add back up to the whole.
+      held, rest = @coverage.partition_by(Set[[ "Investment", "pea" ], [ "Crypto", "crypto_wallet" ]])
+
+      assert_equal @coverage.entries.size, held.size + rest.size
+      assert_equal @coverage.entries.map(&:label).sort, (held + rest).map(&:label).sort
+    end
+
+    test "an empty key set puts everything on the far side" do
+      held, rest = @coverage.partition_by(Set.new)
+
+      assert_empty held
+      assert_equal @coverage.entries.size, rest.size
     end
 
     test "a subtype with no rule is reported as uncovered rather than omitted" do
@@ -385,6 +426,56 @@ module Tax
         assert Catalogue.include?(entry.suggested_rule_id),
                "#{entry.label} suggests #{entry.suggested_rule_id}, which is not in the catalogue"
       end
+    end
+  end
+
+  # -------------------------------------------------------------------------
+
+  class ProductsHeldTest < ActionView::TestCase
+    tests TaxReportsHelper
+
+    setup do
+      @family = families(:dylan_family)
+    end
+
+    test "it reports the type and subtype pairs the family actually holds" do
+      held = tax_products_held(@family)
+
+      assert held.any?
+      @family.accounts.visible.each do |account|
+        next if SubjectBuilder::EXCLUDED_TYPES.include?(account.accountable_type)
+
+        assert_includes held, [ account.accountable_type, account.subtype ]
+      end
+    end
+
+    test "the subtype reported is the one Sure would act on" do
+      # `accounts.subtype` is a stale column; the value Sure reads is on the
+      # delegated accountable. Plucking the column returns nil for every
+      # account, and nil is itself a legitimate key here -- it is what a type
+      # with no subtypes looks like -- so the mistake does not raise. It just
+      # files every product the family holds under the wrong key, which on the
+      # settings page means burying all of them behind the disclosure.
+      account = @family.accounts.create!(
+        name: "PEA", balance: 1000, currency: "EUR",
+        accountable: Investment.new, subtype: "pea"
+      )
+
+      assert_equal "pea", account.reload.subtype
+      assert_includes tax_products_held(@family), [ "Investment", "pea" ]
+    end
+
+    test "liabilities are not products, so they are not held" do
+      # Same scoping as the report, asserted rather than assumed: if these two
+      # ever disagree, the settings page would offer a rule for an account the
+      # report never looks at.
+      held = tax_products_held(@family)
+
+      assert_empty held.map(&:first).to_set & SubjectBuilder::EXCLUDED_TYPES.to_set
+    end
+
+    test "no family means nothing held, rather than an exception" do
+      assert_empty tax_products_held(nil)
     end
   end
 end

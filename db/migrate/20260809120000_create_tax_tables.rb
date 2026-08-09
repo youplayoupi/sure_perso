@@ -28,7 +28,7 @@
 # cannot store code, and the `kind` is looked up in an allow-list rather than
 # constantized, so a row in this table can select a rule but can never define
 # one.
-class CreateTaxTables < ActiveRecord::Migration[7.2]
+class CreateTaxTables < ActiveRecord::Migration[8.1]
   def change
     # `on_delete: :cascade` on every reference below, rather than
     # `dependent: :destroy` on Account and Family.

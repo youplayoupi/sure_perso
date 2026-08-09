@@ -1,0 +1,156 @@
+---
+# Le module ne calcule que des règles françaises : un foyer qui voit cette page
+# est un foyer français, et lui parler anglais serait le seul endroit de Sure
+# où la langue de l'interface ne serait pas respectée.
+#
+# Traduit, pas transposé. Les termes fiscaux sont ceux de l'administration
+# (« prélèvement forfaitaire unique », « barème », « plus-value ») plutôt que
+# des calques de l'anglais, parce qu'un utilisateur qui reconnaît le mot de sa
+# déclaration peut vérifier le chiffre.
+fr:
+  layouts:
+    application:
+      nav:
+        tax: Après impôt
+  tax_reports:
+    show:
+      title: Après impôt
+      subtitle: Ce qu'il vous resterait si vous liquidiez tout le %{date}.
+      unsupported_title: Aucune règle pour %{country} pour l'instant
+      unsupported_body: >-
+        Ce module ne contient que les règles fiscales françaises. Rien n'est
+        calculé pour les autres pays, parce qu'un chiffre faux mais crédible
+        est pire que pas de chiffre. Ajouter un pays, c'est ajouter un barème
+        et un jeu de règles.
+      gross: Brut
+      tax: Impôt
+      net: Net
+      net_upper_bound: Net (majorant)
+      effective_rate: Taux effectif
+      modelled_rate: Taux sur ce qui a été calculé
+      incomplete_title: >-
+        %{count} comptes n'ont pas pu être calculés
+      incomplete_body: >-
+        Leur valeur est comptée dans le brut mais aucun impôt n'en est déduit :
+        le net ci-dessus est donc un majorant, pas une réponse.
+      per_account: Compte par compte
+      col_account: Compte
+      col_rule: Règle
+      col_base: Assiette
+      status:
+        computed: Calculé
+        check: À vérifier
+        not_computed: Non calculé
+      audit: Là où ceci diverge du classement que Sure fait du compte
+      coverage: Ce que ce module couvre
+      coverage_body: >-
+        Chaque produit que vous détenez, et s'il existe une règle pour lui. Un
+        sous-type ajouté dans une version future de Sure apparaît ici comme non
+        couvert dès que vous en détenez un, plutôt que d'être taxé en silence
+        par une règle écrite pour autre chose.
+      coverage_rest: >-
+        Sure connaît %{count} autres produits que vous ne détenez pas. Ils sont
+        listés en entier dans les réglages.
+      coverage_configure: Modifier ces règles
+      coverage_custom: (votre règle)
+      coverage_suggested: essayer %{rule}
+      coverage_none: aucune règle
+      assumptions: Hypothèses
+      assumptions_body: >-
+        Rien de tout ceci n'est observé. Tout est posé, par vous ou par les
+        valeurs par défaut, et les chiffres ci-dessus ne valent que ce que
+        valent ces hypothèses.
+      assumption_liquidation: Tout est vendu le %{date}, sur un seul exercice fiscal.
+      assumption_income_bareme: >-
+        Les revenus soumis au barème progressif sont imposés en les empilant
+        sur %{income} d'autres revenus pour %{parts} part(s).
+      assumption_income_flat: >-
+        Les revenus soumis au barème progressif sont imposés au taux forfaitaire
+        de %{rate}.
+      assumption_rates_html: >-
+        Les taux sont ceux en vigueur à la date de valorisation ; voir
+        <code>%{file}</code>.
+      assumption_liabilities: >-
+        Les dettes sont hors périmètre. Il s'agit de ce qu'il vous resterait,
+        pas de ce que vous valez.
+      projection: Brut et net dans le temps
+      projection_caption: >-
+        %{years} ans à %{return} par an, tout étant liquidé l'année indiquée.
+      projection_empty: >-
+        Rien ici n'a pu être valorisé, il n'y a donc rien à projeter.
+      projection_alt: >-
+        Deux courbes sur %{years} ans. La courbe haute est la valeur brute, la
+        courbe basse ce qu'il resterait après impôt ; la bande entre les deux
+        est l'impôt. Au bout de l'horizon elles valent %{gross} et %{net}.
+      projection_end: "%{date} : %{gross} brut, %{net} net"
+      projection_end_upper_bound: "%{date} : %{gross} brut, %{net} net au plus"
+      declare: Déclarer
+      no_accounts: Aucun compte dans le périmètre.
+  tax:
+    # Les noms de règles et leurs descriptions vivent en Ruby, dans le moteur,
+    # qui doit pouvoir être chargé dans un processus Ruby nu — voir
+    # TaxReportsHelper#tax_rule_label. L'anglais vient donc de là et il n'y a
+    # pas de bloc `tax.rules` dans en.yml : ce fichier traduit, il ne double
+    # pas.
+    rules:
+      fr_pea:
+        label: PEA (gain net, horloge de 5 ans)
+        description: >-
+          Enveloppe de type PEA : les gains ne sont imposés qu'au retrait, et
+          les prélèvements sociaux ne s'appliquent qu'une fois le plan passé
+          le cap des cinq ans.
+      fr_securities:
+        label: Compte-titres (flat tax sur la plus-value)
+        description: >-
+          Compte-titres ordinaire : la plus-value latente est imposée au
+          prélèvement forfaitaire unique.
+      fr_deposit:
+        label: Compte de dépôt
+        description: >-
+          Dépôt à vue ou livret : retirer le solde n'est pas en soi un fait
+          générateur d'impôt.
+      fr_capital_and_gains:
+        label: "Sortie en capital : barème sur les versements, flat tax sur les gains"
+        description: >-
+          Enveloppe retraite à fiscalité différée sortie en capital : les
+          versements déduits sont imposés comme un revenu, les gains au
+          prélèvement forfaitaire unique. À utiliser pour un PER tant que Sure
+          n'a pas de sous-type dédié.
+      exempt:
+        label: Exonéré
+        description: >-
+          Réellement non imposé à la liquidation. Le rapport affiche zéro, et
+          le pense.
+    profiles:
+      edit:
+        title: Éléments fiscaux de %{account}
+        intro: >-
+          Trois choses dont ce module a besoin et que Sure n'a nulle part où
+          stocker. Laissez vide ce que vous ne savez pas : vide veut dire
+          inconnu, et inconnu est rapporté comme inconnu. Ce n'est jamais
+          traité comme zéro.
+        paid_in_label: Total des versements (%{currency})
+        paid_in_hint: >-
+          Tout ce que vous avez jamais versé sur cette enveloppe. Ce n'est pas
+          le prix de revient de ce que vous détenez aujourd'hui — un dividende
+          réinvesti augmente le prix de revient, pas les versements.
+        opened_on_label: Date du premier versement
+        opened_on_hint: >-
+          La date du premier versement, qui est ce qui déclenche le compteur de
+          cinq ans, et non la date de signature du contrat.
+        product_label: Produit
+        product_from_sure: Utiliser le classement de Sure
+        product_hint: >-
+          Utile seulement quand le sous-type de Sure n'est pas assez précis. Un
+          Livret A, un LDDS et un livret fiscalisé ordinaire sont tous les trois
+          de l'« épargne » pour Sure.
+        deducted_label: Dont déduit du revenu imposable (%{currency})
+        deducted_hint: >-
+          Pour les enveloppes retraite : la part de vos versements que vous avez
+          déduite du revenu imposable. Vide suppose la totalité, ce qui est
+          l'hypothèse la plus imposée.
+        notes_label: Notes
+        save: Enregistrer
+        cancel: Annuler
+      update:
+        saved: Éléments fiscaux enregistrés pour %{account}.

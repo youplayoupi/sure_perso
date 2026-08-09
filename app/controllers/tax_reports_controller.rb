@@ -27,6 +27,13 @@ class TaxReportsController < ApplicationController
     )
 
     @coverage = Tax::Coverage.new(@registry)
+
+    # The card lists what this household holds; the rest of Sure's world
+    # catalogue is counted rather than enumerated. See the coverage section of
+    # the view for why, and the settings page for the full list.
+    @coverage_held, @coverage_unheld =
+      @coverage.partition_by(helpers.tax_products_held(Current.family))
+
     @audit    = audit_notes
     @projection = projection if @assumptions.horizon_years.positive?
 

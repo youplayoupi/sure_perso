@@ -34,29 +34,29 @@
           converts them; leaving the label bare invites entering euros into a
           dollar account and getting a confidently wrong answer back. %>
       <%= f.number_field :paid_in, step: "0.01",
-                         label: "Total paid in (#{@account.currency})" %>
+                         label: t(".paid_in_label", currency: @account.currency) %>
       <p class="text-xs text-secondary"><%= t(".paid_in_hint") %></p>
     </div>
 
     <div class="space-y-1">
-      <%= f.date_field :opened_on, label: "Date of first payment" %>
+      <%= f.date_field :opened_on, label: t(".opened_on_label") %>
       <p class="text-xs text-secondary"><%= t(".opened_on_hint") %></p>
     </div>
 
     <div class="space-y-1">
       <%= f.select :product,
-                   [ [ "Use Sure's classification", "" ] ] + product_choices,
-                   { label: "Product" } %>
+                   [ [ t(".product_from_sure"), "" ] ] + product_choices,
+                   { label: t(".product_label") } %>
       <p class="text-xs text-secondary"><%= t(".product_hint") %></p>
     </div>
 
     <div class="space-y-1">
       <%= f.number_field :paid_in_deducted, step: "0.01",
-                         label: "Of which deducted from taxable income (#{@account.currency})" %>
+                         label: t(".deducted_label", currency: @account.currency) %>
       <p class="text-xs text-secondary"><%= t(".deducted_hint") %></p>
     </div>
 
-    <%= f.text_area :notes, rows: 2, label: "Notes" %>
+    <%= f.text_area :notes, rows: 2, label: t(".notes_label") %>
 
     <div class="flex items-center gap-3">
       <%= f.submit t(".save") %>

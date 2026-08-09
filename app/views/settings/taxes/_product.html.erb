@@ -1,0 +1,67 @@
+<%# locals: (entry:, built_in:, selected:, catalogue:) %>
+<%
+  # The "leave it alone" option is labelled with what leaving it alone actually
+  # does. "Default" would be true and useless; naming the built-in rule -- or
+  # admitting there isn't one -- is the difference between a settings page and
+  # a settings page you can act on.
+  default_label = if built_in
+    t(".use_built_in", rule: tax_rule_label(built_in.rule_id, built_in.class.label))
+  else
+    t(".no_rule")
+  end
+
+  options = [ [ default_label, "" ] ] +
+            catalogue.map { |rule_id, (klass, _description)| [ tax_rule_label(rule_id, klass.label), rule_id ] }
+
+  tone = case entry.tax_treatment
+         when :tax_exempt     then :green
+         when :tax_deferred   then :indigo
+         when :tax_advantaged then :violet
+         else                      :neutral
+         end
+
+  description = tax_rule_description(selected)
+  field_id = "tax_rule_#{entry.accountable_type}_#{entry.subtype || 'any'}".parameterize(separator: "_")
+%>
+
+<div class="flex flex-col gap-2 @2xl:flex-row @2xl:items-start @2xl:justify-between">
+  <div class="min-w-0 space-y-1 @2xl:pt-2">
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="text-sm text-primary font-medium"><%= entry.label %></span>
+      <% if entry.tax_treatment.present? %>
+        <%= render DS::Pill.new(
+              label: t("accounts.tax_treatments.#{entry.tax_treatment}"),
+              tone: tone,
+              marker: false,
+              show_dot: false,
+              title: t("accounts.tax_treatment_descriptions.#{entry.tax_treatment}")
+            ) %>
+      <% end %>
+    </div>
+    <% if description %>
+      <p class="text-xs text-secondary max-w-prose"><%= description %></p>
+    <% elsif !entry.covered? %>
+      <%# Amber, and stated on the row rather than only in the select, because
+          an uncovered product is the one thing on this page that changes the
+          report's headline into an upper bound. %>
+      <p class="text-xs text-warning max-w-prose"><%= t(".uncovered_note") %></p>
+    <% end %>
+  </div>
+
+  <%= styled_form_with url: settings_taxes_path,
+                       scope: :tax_rule,
+                       method: :patch,
+                       class: "shrink-0 @2xl:w-80",
+                       data: { controller: "auto-submit-form" } do |f| %>
+    <%= f.hidden_field :accountable_type, value: entry.accountable_type %>
+    <%= f.hidden_field :subtype, value: entry.subtype %>
+    <%= f.select :kind,
+                 options_for_select(options, selected.to_s),
+                 { label: false },
+                 {
+                   id: field_id,
+                   "aria-label": t(".rule_for", product: entry.label),
+                   data: { auto_submit_form_target: "auto" }
+                 } %>
+  <% end %>
+</div>

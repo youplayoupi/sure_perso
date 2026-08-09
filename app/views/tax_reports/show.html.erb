@@ -14,7 +14,12 @@
   <% end %>
 <% else %>
 
-  <div class="space-y-6">
+  <%# @container, not viewport breakpoints, for the same reason as the Plan hub
+      and the goals KPI strip: the centre column narrows when the account or AI
+      sidebar is open, and a viewport breakpoint cannot see that. Four stat
+      cards laid out for a 1920px window get crushed in a 1400px window with a
+      sidebar out, and a clipped tax figure is worse than a stacked one. %>
+  <div class="@container space-y-6">
 
     <%# ---- Headline ------------------------------------------------------ %>
     <%#
@@ -32,21 +37,32 @@
       <% end %>
     <% end %>
 
-    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+    <%# One column, then two, then four -- and only four once the container is
+        genuinely wide enough for four currency figures side by side. The
+        labels are the long part ("Net (upper bound)", "Rate on what was
+        computed"), so the value is allowed to wrap rather than being clipped:
+        a half-printed amount on a tax page reads as a different amount. %>
+    <div class="grid grid-cols-1 @xl:grid-cols-2 @5xl:grid-cols-4 gap-4">
       <% [
-           [ t(".gross"), tax_money(@snapshot.gross, @currency), nil ],
-           [ t(".tax"), tax_money(@snapshot.tax, @currency), nil ],
+           [ t(".gross"), tax_money(@snapshot.gross, @currency), nil, true ],
+           [ t(".tax"), tax_money(@snapshot.tax, @currency), nil, true ],
            [ @snapshot.complete? ? t(".net") : t(".net_upper_bound"),
-             tax_money(@snapshot.net, @currency), @snapshot.complete? ? nil : "text-warning" ],
+             tax_money(@snapshot.net, @currency), @snapshot.complete? ? nil : "text-warning", true ],
            [ @snapshot.complete? ? t(".effective_rate") : t(".modelled_rate"),
-             tax_percent(@snapshot.complete? ? @snapshot.effective_rate : @snapshot.modelled_effective_rate), nil ]
-         ].each do |label, value, tone| %>
-        <%= render DS::Card.new do %>
-          <div class="p-4 space-y-1">
-            <p class="text-xs uppercase tracking-wide text-secondary"><%= label %></p>
-            <p class="text-xl font-medium <%= tone || "text-primary" %>"><%= value %></p>
-          </div>
-        <% end %>
+             tax_percent(@snapshot.complete? ? @snapshot.effective_rate : @snapshot.modelled_effective_rate),
+             nil, false ]
+         ].each do |label, value, tone, sensitive| %>
+        <div class="bg-container rounded-xl shadow-border-xs px-5 py-4 space-y-1">
+          <p class="text-xs uppercase tracking-wide text-secondary"><%= label %></p>
+          <%# `privacy-sensitive` because this is the one page in the app that
+              states, in one number, what the household is worth after tax.
+              Everything else that prints a balance already blurs; leaving
+              this out would make privacy mode a lie. The rate is not blurred:
+              it is a percentage, and it tells a shoulder-surfer nothing. %>
+          <p class="text-xl font-medium tabular-nums break-words <%= tone || "text-primary" %> <%= "privacy-sensitive" if sensitive %>">
+            <%= value %>
+          </p>
+        </div>
       <% end %>
     </div>
 
@@ -63,10 +79,10 @@
           <table class="w-full text-sm">
             <thead class="text-xs uppercase tracking-wide text-secondary">
               <tr class="border-b border-secondary">
-                <th class="text-left  font-normal px-4 py-2">Account</th>
-                <th class="text-left  font-normal px-4 py-2">Rule</th>
+                <th class="text-left  font-normal px-4 py-2"><%= t(".col_account") %></th>
+                <th class="text-left  font-normal px-4 py-2"><%= t(".col_rule") %></th>
                 <th class="text-right font-normal px-4 py-2"><%= t(".gross") %></th>
-                <th class="text-right font-normal px-4 py-2">Base</th>
+                <th class="text-right font-normal px-4 py-2"><%= t(".col_base") %></th>
                 <th class="text-right font-normal px-4 py-2"><%= t(".tax") %></th>
                 <th class="text-right font-normal px-4 py-2"><%= t(".net") %></th>
                 <th class="text-left  font-normal px-4 py-2"></th>
@@ -83,10 +99,10 @@
                     </p>
                   </td>
                   <td class="px-4 py-3 text-secondary"><%= r.basis %></td>
-                  <td class="px-4 py-3 text-right tabular-nums"><%= tax_money(r.gross, r.currency) %></td>
-                  <td class="px-4 py-3 text-right tabular-nums"><%= tax_money(r.taxable_base, r.currency) %></td>
-                  <td class="px-4 py-3 text-right tabular-nums"><%= tax_money(r.tax, r.currency) %></td>
-                  <td class="px-4 py-3 text-right tabular-nums"><%= tax_money(r.net, r.currency) %></td>
+                  <td class="px-4 py-3 text-right tabular-nums privacy-sensitive"><%= tax_money(r.gross, r.currency) %></td>
+                  <td class="px-4 py-3 text-right tabular-nums privacy-sensitive"><%= tax_money(r.taxable_base, r.currency) %></td>
+                  <td class="px-4 py-3 text-right tabular-nums privacy-sensitive"><%= tax_money(r.tax, r.currency) %></td>
+                  <td class="px-4 py-3 text-right tabular-nums privacy-sensitive"><%= tax_money(r.net, r.currency) %></td>
                   <td class="px-4 py-3">
                     <div class="flex items-center gap-2">
                       <span class="text-xs px-2 py-0.5 rounded-full <%= tone %>"><%= status %></span>
@@ -137,27 +153,61 @@
     <%# ---- Coverage ------------------------------------------------------- %>
     <%= render DS::Card.new do %>
       <div class="p-4 space-y-3">
-        <div>
-          <h2 class="font-medium text-primary"><%= t(".coverage") %></h2>
-          <p class="text-sm text-secondary mt-1"><%= t(".coverage_body") %></p>
+        <div class="flex flex-wrap items-baseline justify-between gap-2">
+          <div>
+            <h2 class="font-medium text-primary"><%= t(".coverage") %></h2>
+            <p class="text-sm text-secondary mt-1"><%= t(".coverage_body") %></p>
+          </div>
+          <%# The table states the gaps; this is where they get closed. Without
+              the link the settings page is only reachable by knowing it is
+              there, which for a page that exists to answer "why is this
+              product uncovered?" is the wrong way round. %>
+          <%= link_to t(".coverage_configure"), settings_taxes_path,
+                      class: "text-sm text-link hover:underline shrink-0" %>
         </div>
 
+        <%# Only the products this household holds. Sure's subtype catalogue is
+            a world catalogue -- eighty-odd wrappers across a dozen countries --
+            and listing all of it turns a card that answers "is my portfolio
+            covered?" into thirty rows of Kisan Vikas Patra and Riester-Rente.
+            The rest is counted rather than enumerated, and enumerated in full
+            on the settings page, which is where a rule can actually be set. %>
         <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-1 text-sm">
-          <% @coverage.entries.each do |e| %>
+          <% @coverage_held.each do |e| %>
             <div class="flex items-baseline justify-between gap-2 py-1 border-b border-secondary/30">
               <span class="<%= e.covered? ? "text-primary" : "text-secondary" %>">
                 <%= e.label %>
                 <% if e.custom? %>
-                  <span class="text-xs text-secondary">(your rule)</span>
+                  <span class="text-xs text-secondary"><%= t(".coverage_custom") %></span>
                 <% end %>
               </span>
               <span class="text-xs <%= e.covered? ? "text-secondary" : "text-warning" %> text-right">
-                <%= e.covered? ? e.rule_label : (e.suggested_rule_id ? "try #{e.suggested_rule_id}" : "no rule") %>
+                <% if e.covered? %>
+                  <%= tax_rule_label(e.rule_id, e.rule_label) %>
+                <% elsif e.suggested_rule_id %>
+                  <%= t(".coverage_suggested", rule: tax_rule_label(e.suggested_rule_id)) %>
+                <% else %>
+                  <%= t(".coverage_none") %>
+                <% end %>
               </span>
             </div>
           <% end %>
         </div>
+
+        <% if @coverage_unheld.any? %>
+          <p class="text-xs text-secondary">
+            <%= t(".coverage_rest", count: @coverage_unheld.size) %>
+          </p>
+        <% end %>
       </div>
+    <% end %>
+
+    <%# ---- Gross against net over time ------------------------------------ %>
+    <% if @projection.present? %>
+      <%= render "projection",
+                 projection: @projection,
+                 assumptions: @assumptions,
+                 currency: @currency %>
     <% end %>
 
     <%# ---- Assumptions ---------------------------------------------------- %>
@@ -166,13 +216,19 @@
         <h2 class="font-medium text-primary"><%= t(".assumptions") %></h2>
         <p class="text-sm text-secondary"><%= t(".assumptions_body") %></p>
         <ul class="text-sm text-secondary space-y-1 list-disc list-inside">
-          <li>Everything is sold on <%= format_date(@valuation_date, :long) %>, in one tax year.</li>
+          <li><%= t(".assumption_liquidation", date: format_date(@valuation_date, :long)) %></li>
           <li>
-            Income going to the progressive scale is taxed
-            <%= @assumptions.bareme? ? "by stacking it on #{tax_money(@assumptions.other_taxable_income, @currency)} of other income over #{@assumptions.parts.to_i} part(s)" : "at a flat #{tax_percent(@assumptions.flat_rate, precision: 0)}" %>.
+            <% if @assumptions.bareme? %>
+              <%= t(".assumption_income_bareme",
+                    income: tax_money(@assumptions.other_taxable_income, @currency),
+                    parts: @assumptions.parts.to_i) %>
+            <% else %>
+              <%= t(".assumption_income_flat",
+                    rate: tax_percent(@assumptions.flat_rate, precision: 0)) %>
+            <% end %>
           </li>
-          <li>Rates are those in effect on the valuation date; see <code>config/tax/<%= @country.downcase %>.yml</code>.</li>
-          <li>Liabilities are out of scope. This is what you would keep, not what you are worth.</li>
+          <li><%= t(".assumption_rates_html", file: "config/tax/#{@country.downcase}.yml") %></li>
+          <li><%= t(".assumption_liabilities") %></li>
         </ul>
       </div>
     <% end %>

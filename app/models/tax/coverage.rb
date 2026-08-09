@@ -18,9 +18,23 @@ module Tax
       def custom? = custom
     end
 
+    # Types the report will never look at are left out rather than listed as
+    # uncovered. Liabilities are out of scope by construction -- this module
+    # answers "what would you keep", not "what are you worth" -- so a row
+    # offering a tax rule for a credit card offers a rule that can never fire,
+    # and counting it as a gap inflates the "N of M covered" figure with
+    # products that were never in the running.
+    #
+    # Derived from SubjectBuilder's own exclusion list rather than restated, so
+    # the coverage table and the accounts actually taxed cannot disagree about
+    # what is in scope.
+    def self.default_types
+      Accountable::TYPES - Tax::SubjectBuilder::EXCLUDED_TYPES
+    end
+
     def initialize(registry, types: nil)
       @registry = registry
-      @types = types || Accountable::TYPES
+      @types = types || self.class.default_types
     end
 
     def entries
@@ -41,6 +55,27 @@ module Tax
 
     def by_type
       entries.group_by(&:accountable_type)
+    end
+
+    # Split the catalogue into the products the family actually holds and the
+    # rest.
+    #
+    # Sure's SUBTYPES is a world catalogue -- 401(k), Riester-Rente, Kisan
+    # Vikas Patra and eighty more. A French household is not helped by being
+    # asked to choose a French tax rule for a Thrift Savings Plan, and a
+    # coverage figure of "19 of 86" describes Sure's breadth rather than
+    # anything about this portfolio.
+    #
+    # Nothing is hidden: the remainder is still enumerated, and a subtype added
+    # in a future Sure release still appears. It appears in the half of the
+    # page that is about products nobody here owns, which is where it belongs
+    # until somebody owns one.
+    #
+    # `keys` is a set of [accountable_type, subtype] pairs, built from the
+    # family's own accounts by the caller. Coverage does not query anything --
+    # that is what makes it testable against a bare registry.
+    def partition_by(keys)
+      entries.partition { |e| keys.include?([ e.accountable_type, e.subtype ]) }
     end
 
     private

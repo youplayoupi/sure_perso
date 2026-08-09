@@ -1,0 +1,80 @@
+---
+# Pendant français de en.yml. Même remarque : les deux clés vivent dans le
+# fichier du module, pas dans le fichier de réglages partagé.
+fr:
+  settings:
+    settings_nav:
+      taxes_label: Fiscalité
+    taxes:
+      show:
+        page_title: Fiscalité
+        rules_title: Comment chaque produit est imposé
+        rules_subtitle: >-
+          Une règle par produit que vous détenez, selon les règles %{country}.
+          Ce sont les types de comptes et sous-types de Sure eux-mêmes : un
+          produit ajouté dans une version future de Sure apparaît ici le jour
+          où vous mettez à jour — non couvert, plutôt que taxé en silence par
+          une règle écrite pour autre chose.
+        coverage_summary: >-
+          %{covered} des %{total} produits que vous détenez ont une règle.
+        no_products: >-
+          Aucun compte que le rapport puisse imposer : il n'y a donc rien à
+          régler pour l'instant.
+        other_title: Tout le reste de ce que Sure connaît
+        other_subtitle: >-
+          Les produits que vous ne détenez pas. Y fixer une règle ne change
+          rien aujourd'hui ; cela décide de ce qui se passera la première fois
+          que vous en ouvrirez un.
+        other_toggle: >-
+          Afficher %{count} autres produits
+        pinned_title: Règles rattachées à un compte
+        pinned_subtitle: >-
+          Pour un produit auquel Sure n'a pas encore de sous-type. Un PER et un
+          compte-titres ordinaire sont le même produit pour Sure, donc aucune
+          règle ci-dessus ne peut les distinguer — rattachez plutôt la règle au
+          compte. Une règle rattachée l'emporte sur tout ce qui précède pour ce
+          seul compte, et peut être retirée le jour où Sure livre le sous-type.
+        unpin: Retirer
+        unpin_confirm: >-
+          Retirer cette règle ? Le compte revient à ce que dit la règle de son
+          produit.
+        pin_account_label: Compte
+        pin_account_blank: Choisir un compte
+        pin_rule_label: Règle à appliquer
+        pin_rule_blank: Choisir une règle
+        pin_submit: Rattacher cette règle
+        pin_no_accounts: >-
+          Plus aucun compte auquel rattacher une règle — soit il n'y en a aucun
+          dans le périmètre du rapport, soit chacun d'eux a déjà une règle
+          rattachée.
+        about_title: Ce que cette page fait et ne fait pas
+        about_body: >-
+          Choisir une règle ici change la façon dont le rapport traite tous les
+          comptes de ce produit. Cela ne change rien aux comptes eux-mêmes —
+          aucun solde, aucune position, aucune transaction n'est touchée, et
+          rien n'est recalculé en arrière-plan.
+        about_unknown: >-
+          Un produit laissé sans règle n'est pas considéré comme non imposé. Sa
+          valeur compte toujours dans le brut, aucun impôt n'en est déduit, et
+          le rapport le dit en qualifiant le net de majorant plutôt que de
+          réponse.
+        about_report_link: Ouvrir le rapport après impôt
+      product:
+        use_built_in: "Par défaut : %{rule}"
+        no_rule: Aucune règle — non calculé
+        rule_for: Règle fiscale pour %{product}
+        uncovered_note: >-
+          Aucune règle : les comptes de ce produit sont laissés hors du total
+          d'impôt et le net du rapport devient un majorant.
+      update:
+        saved: Règle enregistrée.
+        cleared: Retour à la règle par défaut pour ce produit.
+        unknown_product: >-
+          Ce n'est pas un produit défini par Sure : rien n'a été enregistré.
+      create:
+        pinned: Règle rattachée à ce compte.
+        unknown_account: >-
+          Choisissez l'un de vos propres comptes pour y rattacher la règle.
+          Rien n'a été enregistré.
+      destroy:
+        unpinned: Règle rattachée à ce compte retirée.

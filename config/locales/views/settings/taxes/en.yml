@@ -1,0 +1,78 @@
+---
+# Kept in the tax module's own file rather than appended to
+# config/locales/views/settings/en.yml. I18n deep-merges across files, so
+# `settings.settings_nav.taxes_label` lands in the same place either way --
+# and this way removing the module does not mean unpicking lines out of a
+# shared locale file.
+en:
+  settings:
+    settings_nav:
+      taxes_label: Taxes
+    taxes:
+      show:
+        page_title: Taxes
+        rules_title: How each product is taxed
+        rules_subtitle: >-
+          One rule per product you hold, using %{country} rules. These are
+          Sure's own account types and subtypes, so a product added in a future
+          Sure release appears here on the day you upgrade — uncovered, rather
+          than quietly taxed by a rule written for something else.
+        coverage_summary: >-
+          %{covered} of the %{total} products you hold have a rule.
+        no_products: >-
+          No accounts the report can tax, so there is nothing to configure yet.
+        other_title: Everything else Sure knows about
+        other_subtitle: >-
+          Products you do not hold. Setting a rule here changes nothing today;
+          it decides what happens the first time you open one.
+        other_toggle: >-
+          Show %{count} other products
+        pinned_title: Rules pinned to one account
+        pinned_subtitle: >-
+          For a product Sure has no subtype for yet. A PER and an ordinary
+          taxable account are the same product to Sure, so no rule above can
+          tell them apart — pin the rule to the account instead. A pinned rule
+          beats everything above it for that one account, and can be removed
+          the day Sure ships the subtype.
+        unpin: Remove
+        unpin_confirm: >-
+          Remove this rule? The account goes back to whatever its product's
+          rule says.
+        pin_account_label: Account
+        pin_account_blank: Choose an account
+        pin_rule_label: Rule to apply
+        pin_rule_blank: Choose a rule
+        pin_submit: Pin this rule
+        pin_no_accounts: >-
+          No account left to pin a rule to — either there are none in the
+          report's scope, or every one of them already has a pinned rule.
+        about_title: What this page does and does not do
+        about_body: >-
+          Choosing a rule here changes how the report treats every account of
+          that product. It changes nothing about the accounts themselves — no
+          balance, no holding, no transaction is touched, and nothing is
+          recalculated in the background.
+        about_unknown: >-
+          A product left without a rule is not treated as untaxed. Its value
+          still counts towards the gross, no tax is deducted for it, and the
+          report says so by calling the net an upper bound instead of an
+          answer.
+        about_report_link: Open the after-tax report
+      product:
+        use_built_in: "Built in: %{rule}"
+        no_rule: No rule — not computed
+        rule_for: Tax rule for %{product}
+        uncovered_note: >-
+          No rule, so accounts of this product are left out of the tax total
+          and the report's net becomes an upper bound.
+      update:
+        saved: Rule saved.
+        cleared: Back to the built-in rule for that product.
+        unknown_product: That is not a product Sure defines, so nothing was saved.
+      create:
+        pinned: Rule pinned to that account.
+        unknown_account: >-
+          Choose one of your own accounts to pin the rule to. Nothing was
+          saved.
+      destroy:
+        unpinned: Removed the rule pinned to that account.
