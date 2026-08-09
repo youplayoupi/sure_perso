@@ -22,6 +22,29 @@ module Tax
           @label = value if value
           @label || rule_id
         end
+
+        # The arithmetic this rule performs, as data, for the screen that
+        # explains it. Declaring it is optional -- a rule too irregular to fit
+        # the shape says so by leaving it out, and the page then admits it
+        # cannot show the workings rather than showing a simplified version
+        # that is not what ran.
+        #
+        # Where it is declared it is not documentation, because
+        # test/models/tax/formula_equivalence_test.rb runs it through
+        # Rules::Composed and demands the same tax to the cent as the method
+        # below. A formula that falls out of step with its rule fails the
+        # build.
+        def formula(spec = nil)
+          @formula = Formula.from(spec) if spec
+          @formula
+        end
+      end
+
+      # Instance-level for convenience at call sites that hold a rule object
+      # rather than a class. Rules::Composed overrides it: its formula is the
+      # one it was handed, not one declared on the class.
+      def formula
+        self.class.formula
       end
 
       def call(subject, on:, rates:, assumptions:)

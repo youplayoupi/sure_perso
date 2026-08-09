@@ -11,6 +11,11 @@ module Tax
       rule_id "exempt"
       label "Exempt"
 
+      # No terms. The same shape as Rules::Fr::Deposit and a different claim:
+      # deposit says withdrawing your own cash is not an event, this says the
+      # product is not taxed at all.
+      formula terms: []
+
       def initialize(reason: "exempt from income tax and social charges")
         @reason = reason
       end

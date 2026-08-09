@@ -23,6 +23,20 @@ module Tax
         rule_id "fr_capital_and_gains"
         label "Lump sum: scale on the capital, flat tax on the growth"
 
+        # The two-stream shape, and the reason the formula vocabulary needs
+        # more than one term at all. The deducted payments go to the
+        # progressive scale and stack with anything else liquidated the same
+        # year; the growth takes the flat tax on its own. Payments that were
+        # never deducted appear in neither term, which is the arithmetic saying
+        # they come back untaxed.
+        formula terms: [
+          { base: "paid_in_deducted",  rate: "progressive" },
+          { base: "gain_over_paid_in", rate: "flat_tax" }
+        ], notes: [
+          "Assumes the whole wrapper is taken as a lump sum in one tax year. " \
+          "Spreading withdrawals lowers the bill and is not modelled."
+        ]
+
         def call(subject, on:, rates:, assumptions:)
           if subject.paid_in.nil?
             return refuse(

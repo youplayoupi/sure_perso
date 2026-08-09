@@ -13,6 +13,18 @@ module Tax
         rule_id "fr_securities"
         label "Securities account (flat tax on the capital gain)"
 
+        # One term, and no clock: a CTO has no holding period that changes the
+        # rate.
+        #
+        # The formula names cost basis because that is the base in law.
+        # #acquisition_cost below prefers a declared figure where one exists,
+        # which is a rule about where the number comes from rather than about
+        # what is taxed, so it is not a term. The equivalence test exercises
+        # this rule on accounts with nothing declared, and says so.
+        formula terms: [
+          { base: "gain_over_cost_basis", rate: "flat_tax" }
+        ]
+
         def call(subject, on:, rates:, assumptions:)
           base, source = acquisition_cost(subject)
 

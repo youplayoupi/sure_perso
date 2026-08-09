@@ -39,8 +39,22 @@ module Tax
         "exempt" => [
           Rules::Exempt,
           "Genuinely untaxed on liquidation. Reports zero, and means it."
+        ],
+        COMPOSED => [
+          Rules::Composed,
+          "Write your own: choose what is taxed -- the whole balance, the gain, " \
+          "the payments in -- and at what rate, with an optional maturity clock."
         ]
       }.freeze
+    end
+
+    # The one rule here that is configured rather than merely chosen. The
+    # settings screen has to branch on it to show a builder instead of a
+    # description, and it should do that without a bare string in a view.
+    COMPOSED = "composed"
+
+    def self.composed?(kind)
+      kind.to_s == COMPOSED
     end
 
     def self.kinds
@@ -55,6 +69,13 @@ module Tax
       entries.dig(kind.to_s, 1)
     end
 
+    # The class itself, for callers that want to ask it something -- its
+    # declared formula, in practice -- rather than instantiate it. Returns nil
+    # for an unknown kind, like everything else here.
+    def self.rule_class(kind)
+      entries.dig(kind.to_s, 0)
+    end
+
     # Returns nil rather than raising for an unknown kind. A row written by an
     # older version of this module naming a rule that has since been removed
     # should degrade to "no rule", which the engine already handles safely by
@@ -63,12 +84,30 @@ module Tax
       klass = entries.dig(kind.to_s, 0)
       return nil if klass.nil?
 
-      params.nil? || params.empty? ? klass.new : klass.new(**symbolize(params))
+      accepted = accepted_params(klass, params)
+      accepted.empty? ? klass.new : klass.new(**accepted)
     end
 
     def self.symbolize(params)
       params.to_h.transform_keys(&:to_sym)
     end
     private_class_method :symbolize
+
+    # Keys the constructor does not name are dropped rather than splatted in,
+    # because `new(**unexpected)` is an ArgumentError and this runs inside a
+    # loop over every account in the report. A params hash written by a newer
+    # version of the module, or by hand, should cost the reader one rule -- and
+    # ideally not even that, since the rule still gets built from the keys it
+    # does understand. Losing the whole page over a stray key would be a worse
+    # answer than any of the rules could give.
+    def self.accepted_params(klass, params)
+      return {} if params.nil? || params.empty?
+
+      names = klass.instance_method(:initialize).parameters.filter_map do |type, name|
+        name if %i[key keyreq].include?(type)
+      end
+      symbolize(params).slice(*names)
+    end
+    private_class_method :accepted_params
   end
 end

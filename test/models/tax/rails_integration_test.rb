@@ -124,6 +124,56 @@ module Tax
       # to compute; blowing up the whole report would be worse.
       assert_nil Catalogue.build("fr_something_removed")
     end
+
+    test "a composed rule carries its formula in params and builds from it" do
+      rule = CustomRule.new(
+        family: @family, accountable_type: "Investment", subtype: "per",
+        kind: "composed",
+        params: {
+          "name" => "My PER",
+          "terms" => [
+            { "base" => "paid_in_deducted", "rate" => "progressive" },
+            { "base" => "gain_over_paid_in", "rate" => "flat_tax" }
+          ]
+        }
+      )
+
+      assert rule.valid?, rule.errors.full_messages.inspect
+      assert rule.composed?
+      assert_instance_of Rules::Composed, rule.to_rule
+      assert_equal 2, rule.formula.terms.length
+    end
+
+    test "a composed rule with arithmetic that does not add up is rejected at save time" do
+      # The engine refuses at run time on the same conditions, so nothing wrong
+      # can be computed either way. This is so the author finds out while the
+      # form is still on screen rather than months later in a report footnote.
+      rule = CustomRule.new(
+        family: @family, accountable_type: "Investment",
+        kind: "composed",
+        params: { "terms" => [ { "base" => "full_value", "rate" => "literal", "literal_rate" => "30" } ] }
+      )
+
+      assert_not rule.valid?
+      assert_match(/not between 0 and 1/, rule.errors[:params].join)
+    end
+
+    test "a built-in rule reports the formula declared in its class" do
+      rule = CustomRule.new(family: @family, accountable_type: "Investment", kind: "fr_pea")
+
+      assert_not rule.composed?
+      assert_equal 5, rule.formula.maturity_years
+    end
+
+    test "params a rule does not understand are dropped rather than crashing the report" do
+      # A row written by a newer version of the module, read by this one. It
+      # should cost the reader nothing: the rule still builds from the keys it
+      # recognises. `new(**unexpected)` would be an ArgumentError raised once
+      # per account, which is a blank page instead of a report.
+      built = Catalogue.build("composed", { "terms" => [], "invented_later" => true })
+
+      assert_instance_of Rules::Composed, built
+    end
   end
 
   # -------------------------------------------------------------------------

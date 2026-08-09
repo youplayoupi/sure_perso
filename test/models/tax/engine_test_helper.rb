@@ -34,7 +34,9 @@ module TaxEngineTestHelper
     tax/subject
     tax/result
     tax/treatment
+    tax/formula
     tax/rules/base
+    tax/rules/composed
     tax/rules/unknown
     tax/rules/exempt
     tax/rules/not_modelled
@@ -42,6 +44,7 @@ module TaxEngineTestHelper
     tax/rules/fr/securities
     tax/rules/fr/deposit
     tax/rules/fr/capital_and_gains
+    tax/catalogue
     tax/registry
     tax/snapshot
     tax/projection

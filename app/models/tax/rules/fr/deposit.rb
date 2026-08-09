@@ -22,6 +22,16 @@ module Tax
         rule_id "fr_deposit"
         label "Deposit account"
 
+        # No terms, which is how "nothing is taxed on liquidation" is written,
+        # and is the whole of the arithmetic. Everything else this rule does is
+        # wording -- telling the reader which of two different zeroes they are
+        # looking at.
+        formula terms: [],
+                notes: [
+                  "Interest on a taxable livret is taxed as it arises. That tax is real " \
+                  "and already paid; it is outside a report about liquidating today."
+                ]
+
         # Products whose interest is exempt from both income tax and social
         # charges, not merely untaxed on withdrawal.
         FULLY_EXEMPT = %w[livret_a ldds lep livret_jeune].freeze

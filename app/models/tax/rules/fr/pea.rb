@@ -18,6 +18,16 @@ module Tax
         rule_id "fr_pea"
         label "PEA (gain net, 5-year clock)"
 
+        # Five years is the statutory clock for all three PEA variants, and the
+        # rate file agrees for each of them. The rule below still reads
+        # `maturity_years` from the file per product rather than from here, so
+        # that a self-hoster correcting the file is obeyed; this figure is what
+        # the screen shows and what the equivalence test holds it to.
+        formula terms: [
+          { base: "gain_over_paid_in", rate: "social_charges", condition: "mature" },
+          { base: "gain_over_paid_in", rate: "flat_tax",       condition: "immature" }
+        ], maturity_years: 5
+
         TAUX_HISTORIQUES_WINDOW = Date.new(2013, 1, 1)..Date.new(2017, 12, 31)
 
         def call(subject, on:, rates:, assumptions:)

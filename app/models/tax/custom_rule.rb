@@ -27,6 +27,7 @@ module Tax
     }
     validate :targets_exactly_one_thing
     validate :account_belongs_to_family
+    validate :formula_adds_up
 
     scope :pinned, -> { where.not(account_id: nil) }
     scope :by_key, -> { where(account_id: nil) }
@@ -41,6 +42,22 @@ module Tax
 
     def description
       Tax::Catalogue.description(kind)
+    end
+
+    def composed? = Tax::Catalogue.composed?(kind)
+
+    # The arithmetic this row performs, as data, for the screen that draws it.
+    #
+    # A composed row carries its own formula in `params`; every other row
+    # selects a rule whose formula is declared in Ruby and is the same for
+    # everyone. Both come back through the same method so the view has one
+    # thing to render, and so a built-in and a hand-written rule are explained
+    # in the same vocabulary -- which is the only way a reader can compare
+    # them.
+    def formula
+      return Tax::Formula.from(params) if composed?
+
+      Tax::Catalogue.rule_class(kind)&.formula
     end
 
     # What this row covers, in words, for the coverage table.
@@ -71,6 +88,22 @@ module Tax
         return if account.family_id == family_id
 
         errors.add(:account, "does not belong to this family")
+      end
+
+      # A composed rule is the one kind whose params are load-bearing, so it is
+      # the one kind that can be saved wrong. Catching it here means a bad
+      # formula is a form error the author can see and fix, rather than a rule
+      # that declines to compute for every account it touches and explains why
+      # in a report they may not read for months.
+      #
+      # The engine still refuses at run time on the same conditions -- see
+      # Rules::Composed#refuse_invalid. This validation is the courtesy; that
+      # refusal is the guarantee, and it has to survive a row written straight
+      # into the database.
+      def formula_adds_up
+        return unless composed?
+
+        Tax::Formula.from(params).errors.each { |message| errors.add(:params, message) }
       end
   end
 end
