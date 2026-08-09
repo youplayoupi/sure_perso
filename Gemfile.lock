@@ -339,7 +339,7 @@ GEM
       actionview (>= 5.0.0)
       activesupport (>= 5.0.0)
     jmespath (1.6.2)
-    json (2.21.1)
+    json (2.21.2)
     json-jwt (1.16.7)
       activesupport (>= 4.2)
       aes_key_wrap
@@ -514,7 +514,7 @@ GEM
       ruby-rc4
       ttfunk
     pg (1.5.9)
-    plaid (41.0.0)
+    plaid (49.0.0)
       faraday (>= 1.0.1, < 3.0)
       faraday-multipart (>= 1.0.1, < 2.0)
     platform_agent (1.0.1)
