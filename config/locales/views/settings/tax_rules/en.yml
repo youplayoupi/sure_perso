@@ -86,6 +86,7 @@ en:
           written today keeps giving the right answer after the rates change. A
           rate you type in is used exactly as written.
         about_assign_link: Choose which product uses which rule
+        about_rates_link: See or correct the rates themselves
       new:
         page_title: Write a tax rule
         title: Write a tax rule

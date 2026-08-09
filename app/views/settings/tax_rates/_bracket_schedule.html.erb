@@ -1,0 +1,73 @@
+<%# locals: (index:, entry: nil, shipped: nil) %>
+<%#
+  One year of the progressive scale: a date it takes effect, and the bands.
+
+  The bands are posted in full for every schedule, even when only one
+  threshold moved, because Tax::RateOverlay replaces a dated entry rather than
+  merging into it. A partial schedule would not correct the scale, it would
+  delete the bands it left out.
+
+  Its own tax-rows controller with its own placeholder token. A schedule and
+  the bands inside it are both cloned from templates, so sharing IDX would
+  mean adding a year consumed the placeholder belonging to the band template
+  it carries, and the first band added inside it would post under the literal
+  string.
+%>
+
+<% bands = Array(entry && entry["brackets"]) %>
+<% shipped_bands = Array(shipped && shipped["brackets"]) %>
+
+<li class="rounded-lg border border-secondary border-xs p-3 space-y-3"
+    data-controller="element-removal tax-rows"
+    data-tax-rows-placeholder-value="BAND_PLACEHOLDER">
+
+  <div class="flex flex-wrap items-end justify-between gap-3">
+    <div class="grow max-w-xs">
+      <%= date_field_tag "tax_rates[income_tax_brackets][#{index}][effective_from]",
+                         entry && entry["effective_from"].to_s,
+                         class: "form-field__input",
+                         aria: { label: t("settings.tax_rates.effective_from") } %>
+      <p class="text-xs text-subdued mt-1"><%= t("settings.tax_rates.effective_from") %></p>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <% if entry && entry["note"].present? %>
+        <p class="text-xs text-subdued"><%= entry["note"] %></p>
+      <% end %>
+      <button type="button"
+              class="text-secondary hover:text-destructive p-2"
+              data-action="element-removal#remove"
+              aria-label="<%= t("settings.tax_rates.remove_schedule") %>">
+        <%= icon "trash-2", size: "sm" %>
+      </button>
+    </div>
+  </div>
+
+  <div class="grid gap-3 @xl:grid-cols-12 text-xs text-subdued">
+    <div class="@xl:col-span-4"><%= t("settings.tax_rates.upto") %></div>
+    <div class="@xl:col-span-3"><%= t("settings.tax_rates.rate_percent") %></div>
+  </div>
+
+  <template data-tax-rows-target="template">
+    <%= render "settings/tax_rates/bracket_band",
+               schedule_index: index, index: "BAND_PLACEHOLDER", band: nil, shipped: nil %>
+  </template>
+
+  <ul data-tax-rows-target="list" class="space-y-2">
+    <% bands.each_with_index do |band, band_index| %>
+      <%= render "settings/tax_rates/bracket_band",
+                 schedule_index: index,
+                 index: band_index,
+                 band: band,
+                 shipped: shipped_bands[band_index] %>
+    <% end %>
+  </ul>
+
+  <%= render DS::Button.new(
+        text: t("settings.tax_rates.add_band"),
+        icon: "plus",
+        variant: "ghost",
+        type: "button",
+        data: { action: "tax-rows#add" }
+      ) %>
+</li>

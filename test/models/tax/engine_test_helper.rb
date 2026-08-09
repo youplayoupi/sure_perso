@@ -32,6 +32,7 @@ module TaxEngineTestHelper
     tax/vocabulary
     tax/rate_table
     tax/rate_overlay
+    tax/rate_edit
     tax/assumptions
     tax/subject
     tax/result

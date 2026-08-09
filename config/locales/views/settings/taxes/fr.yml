@@ -18,6 +18,7 @@ fr:
         coverage_summary: >-
           %{covered} des %{total} produits que vous détenez ont une règle.
         library_link: Voir ce que fait chaque règle, ou écrire la vôtre
+        rates_link: Corriger un taux, un barème ou un plafond
         no_products: >-
           Aucun compte que le rapport puisse imposer : il n'y a donc rien à
           régler pour l'instant.

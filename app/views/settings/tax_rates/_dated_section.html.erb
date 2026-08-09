@@ -1,0 +1,42 @@
+<%# locals: (section:, title:, hint:, mine:, shipped:) %>
+<%#
+  One effective-dated rate schedule: social charges, or the income-tax part of
+  the flat tax.
+
+  Every entry in the file is rendered, not only the one in force today. A
+  household correcting next year's rate has to be able to see next year's
+  rate, and a schedule shown as a single current figure would make the
+  effective dating -- the thing that keeps a 2025 valuation correct after a
+  2026 rate change -- invisible on the one page that edits it.
+%>
+
+<section class="space-y-3" data-controller="tax-rows">
+  <h3 class="text-sm font-medium text-primary"><%= title %></h3>
+  <p class="text-xs text-subdued max-w-prose"><%= hint %></p>
+
+  <%# Rendered by the server so an added row is identical to a stored one,
+      labels and translations included, rather than assembled in JavaScript
+      and drifting from it. %>
+  <template data-tax-rows-target="template">
+    <%= render "settings/tax_rates/dated_row",
+               section: section, index: "IDX_PLACEHOLDER", entry: nil, shipped: nil %>
+  </template>
+
+  <ul data-tax-rows-target="list" class="space-y-3">
+    <% tax_effective_dates(mine, section).each_with_index do |date, index| %>
+      <%= render "settings/tax_rates/dated_row",
+                 section: section,
+                 index: index,
+                 entry: tax_entry(mine, section, date),
+                 shipped: tax_entry(shipped, section, date) %>
+    <% end %>
+  </ul>
+
+  <%= render DS::Button.new(
+        text: t("settings.tax_rates.add_rate"),
+        icon: "plus",
+        variant: "ghost",
+        type: "button",
+        data: { action: "tax-rows#add" }
+      ) %>
+</section>

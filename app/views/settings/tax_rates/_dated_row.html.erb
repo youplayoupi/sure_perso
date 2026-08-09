@@ -1,0 +1,66 @@
+<%# locals: (section:, index:, entry: nil, shipped: nil) %>
+<%#
+  One dated rate: the day it takes effect, and the rate itself.
+
+  Indexed rather than posted as a bare array, for the reason the rule builder
+  gives: rows are added and removed, and `[][rate]` would re-pair a date with
+  the wrong rate the moment one in the middle went away.
+
+  The date is the identity of the row. Tax::RateOverlay matches on it, so
+  changing the date of a shipped entry does not move that entry -- it leaves
+  the shipped one alone and adds a second. That is the honest behaviour for a
+  merge with no vocabulary for deletion, and the hint under the field says so
+  rather than letting someone discover it by finding two rates in the list.
+%>
+
+<% rate = entry && entry["rate"] %>
+<% shipped_rate = shipped && shipped["rate"] %>
+<% corrected = entry.present? && (shipped.nil? || !tax_same_figure?(shipped_rate, rate)) %>
+
+<li class="rounded-lg border border-secondary border-xs p-3" data-controller="element-removal">
+  <div class="grid gap-3 @xl:grid-cols-12 items-start">
+    <div class="@xl:col-span-4">
+      <%= date_field_tag "tax_rates[#{section}][#{index}][effective_from]",
+                         entry && entry["effective_from"].to_s,
+                         class: "form-field__input",
+                         aria: { label: t("settings.tax_rates.effective_from") } %>
+      <p class="text-xs text-subdued mt-1"><%= t("settings.tax_rates.effective_from") %></p>
+    </div>
+
+    <div class="@xl:col-span-4">
+      <div class="flex items-center gap-2">
+        <%= text_field_tag "tax_rates[#{section}][#{index}][rate]",
+                           tax_percent_field(rate),
+                           class: "form-field__input",
+                           inputmode: "decimal",
+                           placeholder: "18.6",
+                           aria: { label: t("settings.tax_rates.rate_percent") } %>
+        <span class="text-sm text-secondary">%</span>
+      </div>
+      <p class="text-xs text-subdued mt-1"><%= t("settings.tax_rates.rate_percent") %></p>
+    </div>
+
+    <%# The shipped figure, shown only where it differs from what is in the
+        box. Under every row it would be noise on the overwhelming majority,
+        which are untouched; under a changed one it is the only way to see
+        what you changed it from. %>
+    <div class="@xl:col-span-3">
+      <% if corrected %>
+        <p class="text-xs text-warning">
+          <%= t("settings.tax_rates.shipped_was", value: tax_shipped_percent(shipped_rate)) %>
+        </p>
+      <% elsif entry && entry["note"].present? %>
+        <p class="text-xs text-subdued"><%= entry["note"] %></p>
+      <% end %>
+    </div>
+
+    <div class="@xl:col-span-1 flex items-start justify-end">
+      <button type="button"
+              class="text-secondary hover:text-destructive p-2"
+              data-action="element-removal#remove"
+              aria-label="<%= t("settings.tax_rates.remove_row") %>">
+        <%= icon "trash-2", size: "sm" %>
+      </button>
+    </div>
+  </div>
+</li>

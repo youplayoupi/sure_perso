@@ -347,6 +347,11 @@ Rails.application.routes.draw do
       # on one should be one click from the other.
       resources :rules, controller: "tax_rules",
                         only: %i[index new create edit update destroy]
+
+      # The numbers those rules multiply by. Singular, because a family has one
+      # set of corrections per country rather than a collection of them, and
+      # `destroy` means "go back to what the module ships".
+      resource :rates, controller: "tax_rates", only: %i[show update destroy]
     end
     get "bank_sync", to: redirect("/settings/providers", status: 301)
     resource :providers, only: %i[show update] do

@@ -65,6 +65,21 @@ module Tax
       end
     end
 
+    # The whole schedule for a dated section, not just the entry in force.
+    #
+    # Everything else on this class answers "what applies on this date", which
+    # is the only question the engine ever has. The rates screen asks a
+    # different one -- show me every entry, including the ones that have not
+    # taken effect yet -- because a household correcting next year's rate has
+    # to be able to see next year's rate.
+    #
+    # Deep-duplicated on the way out. `@data` is the memoised parse shared by
+    # every family in the process, and handing a view a live reference to it
+    # is how one household's edit ends up in another's report.
+    def entries_for(section)
+      deep_dup(Array(@data[section.to_s]))
+    end
+
     # -- product metadata ---------------------------------------------------
 
     def product(name)
@@ -162,6 +177,14 @@ module Tax
 
       def dec(value)
         value.is_a?(BigDecimal) ? value : BigDecimal(value.to_s)
+      end
+
+      def deep_dup(value)
+        case value
+        when Hash  then value.each_with_object({}) { |(k, v), out| out[k] = deep_dup(v) }
+        when Array then value.map { |v| deep_dup(v) }
+        else value
+        end
       end
   end
 end

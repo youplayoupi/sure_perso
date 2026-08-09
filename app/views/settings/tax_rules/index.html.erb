@@ -94,8 +94,12 @@
   <div class="text-sm text-secondary space-y-3 max-w-prose">
     <p><%= t(".about_body") %></p>
     <p><%= t(".about_rates") %></p>
-    <p>
+    <p class="flex flex-wrap gap-x-4 gap-y-1">
       <%= link_to t(".about_assign_link"), settings_taxes_path, class: "text-link hover:underline" %>
+      <%# The paragraph above says named rates follow the rate file, which
+          raises the obvious next question. This is where that file is
+          edited. %>
+      <%= link_to t(".about_rates_link"), settings_taxes_rates_path, class: "text-link hover:underline" %>
     </p>
   </div>
 <% end %>

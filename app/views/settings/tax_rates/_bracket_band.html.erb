@@ -1,0 +1,55 @@
+<%# locals: (schedule_index:, index:, band: nil, shipped: nil) %>
+<%#
+  One band of the progressive scale: income up to a threshold, taxed at a rate.
+
+  The last band's threshold is deliberately left empty. `upto: null` is what
+  makes the top band open-ended, and it is the thing that stops income above
+  the highest threshold from falling out of the calculation untaxed --
+  Tax::RateOverlay refuses to save a schedule without one.
+%>
+
+<% upto = band && band["upto"] %>
+<% rate = band && band["rate"] %>
+<% corrected = band.present? && shipped.present? &&
+               !(tax_same_figure?(shipped["upto"], upto) && tax_same_figure?(shipped["rate"], rate)) %>
+
+<li class="grid gap-3 @xl:grid-cols-12 items-start" data-controller="element-removal">
+  <div class="@xl:col-span-4">
+    <%= text_field_tag "tax_rates[income_tax_brackets][#{schedule_index}][brackets][#{index}][upto]",
+                       tax_amount_field(upto),
+                       class: "form-field__input",
+                       inputmode: "decimal",
+                       placeholder: t("settings.tax_rates.upto_open"),
+                       aria: { label: t("settings.tax_rates.upto") } %>
+  </div>
+
+  <div class="@xl:col-span-3">
+    <div class="flex items-center gap-2">
+      <%= text_field_tag "tax_rates[income_tax_brackets][#{schedule_index}][brackets][#{index}][rate]",
+                         tax_percent_field(rate),
+                         class: "form-field__input",
+                         inputmode: "decimal",
+                         aria: { label: t("settings.tax_rates.rate_percent") } %>
+      <span class="text-sm text-secondary">%</span>
+    </div>
+  </div>
+
+  <div class="@xl:col-span-4">
+    <% if corrected %>
+      <p class="text-xs text-warning">
+        <%= t("settings.tax_rates.shipped_band_was",
+              upto: tax_shipped_amount(shipped["upto"]),
+              rate: tax_shipped_percent(shipped["rate"])) %>
+      </p>
+    <% end %>
+  </div>
+
+  <div class="@xl:col-span-1 flex items-start justify-end">
+    <button type="button"
+            class="text-secondary hover:text-destructive p-2"
+            data-action="element-removal#remove"
+            aria-label="<%= t("settings.tax_rates.remove_row") %>">
+      <%= icon "trash-2", size: "sm" %>
+    </button>
+  </div>
+</li>

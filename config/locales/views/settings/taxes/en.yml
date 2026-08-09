@@ -20,6 +20,7 @@ en:
         coverage_summary: >-
           %{covered} of the %{total} products you hold have a rule.
         library_link: See what each rule does, or write your own
+        rates_link: Correct a rate, a scale or a ceiling
         no_products: >-
           No accounts the report can tax, so there is nothing to configure yet.
         other_title: Everything else Sure knows about

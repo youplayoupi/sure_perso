@@ -88,6 +88,7 @@ fr:
           après un changement de taux. Un taux que vous saisissez est appliqué
           tel quel.
         about_assign_link: Choisir quel produit utilise quelle règle
+        about_rates_link: Voir ou corriger les taux eux-mêmes
       new:
         page_title: Écrire une règle fiscale
         title: Écrire une règle fiscale

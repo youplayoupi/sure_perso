@@ -19,8 +19,13 @@
         5-year clock)" is a claim the reader has no way to check from here. The
         library is where that claim is spelled out in full, which makes this
         link part of the choice rather than a footnote to it. %>
-    <p class="text-sm">
+    <p class="text-sm flex flex-wrap gap-x-4 gap-y-1">
       <%= link_to t(".library_link"), settings_taxes_rules_path, class: "text-link hover:underline" %>
+      <%# The other half of the same question. A rule says what is taxed; the
+          rates say by how much. Someone who disagrees with a figure in the
+          report is as likely to be disagreeing with the number as with the
+          shape, and until this link existed only one of those was reachable. %>
+      <%= link_to t(".rates_link"), settings_taxes_rates_path, class: "text-link hover:underline" %>
     </p>
 
     <% if @held.any? %>

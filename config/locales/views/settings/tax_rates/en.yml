@@ -1,0 +1,103 @@
+---
+# The rates screen. Its own file, like the rest of this module's locales, so
+# that removing the module is a delete rather than an unpick.
+#
+# The wording here has one job beyond naming the fields: to say that a figure
+# left alone keeps following the shipped file and a figure corrected stops.
+# That is the only thing about this page a reader cannot work out by looking
+# at it, and it is the thing that bites a year later.
+en:
+  settings:
+    tax_rates:
+      none: not set
+      effective_from: Takes effect from
+      rate_percent: Rate, as a percentage
+      upto: Income up to
+      upto_open: leave empty for the top band
+      maturity_years: Maturity, in years
+      ceiling: Ceiling on payments in
+      shipped_was: "This module ships %{value}"
+      shipped_band_was: "This module ships %{upto} at %{rate}"
+      add_rate: Add a dated rate
+      add_band: Add a band
+      add_schedule: Add a year
+      remove_row: Remove this row
+      remove_schedule: Remove this year
+      sections:
+        social_charges: Social charges
+        flat_tax_income_component: Flat tax, income-tax part
+        income_tax_brackets: Income-tax scale
+        products: Products
+      show:
+        page_title: Tax rates
+        rates_title: Rates
+        rates_subtitle: >-
+          The figures the rules multiply by. Every rate the module ships is
+          listed, including ones that have not taken effect yet, because a
+          rate is read on the date the report is drawn — correcting next
+          year's figure today leaves last year's report reproducing exactly
+          as before.
+        social_charges_hint: >-
+          Prélèvements sociaux on investment income. Applied by nearly every
+          rule in the module, so a correction here moves most of the report.
+        flat_tax_hint: >-
+          The income-tax part of the PFU only. The headline flat tax is this
+          plus social charges, which is why it is not a field of its own: the
+          module adds the two so they cannot drift apart.
+        flat_tax_headline: >-
+          It currently comes to %{headline}%.
+        brackets_title: Income-tax scale
+        brackets_subtitle: >-
+          The barème, per part of quotient familial. Used wherever a rule
+          sends something to the progressive scale rather than the flat tax —
+          the deducted payments out of a PER, most commonly. The last band's
+          threshold is left empty on purpose: that is what makes it
+          open-ended, and without it the highest incomes would fall out of
+          the calculation untaxed.
+        products_title: Product figures
+        products_subtitle: >-
+          What the rules need to know about each wrapper. The maturity is the
+          clock a rule asks about when it treats an account differently once
+          it is old enough — five years, for a PEA. The ceiling is always on
+          cumulative payments in, never on what the account is worth now.
+        edited_title: You have corrected some of these figures
+        edited_body: >-
+          Your own figures are in force for %{sections}, and the report is
+          computed from them. Those sections have stopped following the file
+          this module ships, so they will not pick up a future release's
+          figures until you clear them.
+        reset: Go back to the shipped figures
+        reset_confirm: >-
+          Discard every correction on this page and go back to what the module
+          ships? The report will be computed from the shipped figures from the
+          next time it is drawn.
+        save: Save these figures
+        cancel: Cancel
+        about_title: How this page behaves
+        about_upgrades: >-
+          Only what you change is stored. A figure you leave alone keeps
+          following the file this module ships, so a future release that
+          carries a new rate or a new scale gives it to you automatically. A
+          figure you correct is yours from then on, and stays yours through
+          that release — which is the point, but it does mean a section you
+          corrected once will not update itself.
+        about_dates: >-
+          A date is what identifies a rate, not its position in the list. That
+          is what lets a report drawn for last year keep using last year's
+          rate. It also means changing the date on a row the module ships adds
+          a second rate rather than moving the first: to correct a shipped
+          rate, change the rate and leave its date alone.
+        about_deletion: >-
+          Removing a row that the module ships does not delete it — your
+          corrections are laid over the shipped file, and a correction can set
+          a figure but cannot unset one. The row will be back the next time
+          this page loads. To stop a shipped rate applying, give it a
+          different value rather than removing it.
+        about_rules_link: See which rules use these figures
+      update:
+        saved: Rates saved.
+        unchanged: >-
+          Nothing differs from what the module ships, so no corrections were
+          stored.
+      destroy:
+        reset: Back to the figures this module ships.
