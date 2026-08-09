@@ -269,6 +269,105 @@ module Tax
       assert_equal d(2_000), result.tax
     end
 
+    # -- vintage: which rules applied when the account was opened -------------
+    #
+    # Distinct from the maturity clock. The clock asks how old the wrapper is
+    # today; the vintage asks when it was opened, and French tax turns on it
+    # repeatedly -- a PEA opened between 2013 and 2017 keeps the social-charge
+    # rates in force as each year's gain arose, and an assurance-vie signed
+    # before 27 September 2017 is taxed on terms withdrawn for later contracts.
+
+    def vintage_rule
+      composed(
+        terms: [
+          { base: "gain_over_paid_in", rate: "literal", literal_rate: "0.15",
+            opened_until: "2017-12-31" },
+          { base: "gain_over_paid_in", rate: "literal", literal_rate: "0.30",
+            opened_from: "2018-01-01" }
+        ]
+      )
+    end
+
+    def test_a_term_fires_only_for_accounts_opened_inside_its_window
+      old = run_rule(vintage_rule, subject(value: d(110_000), paid_in: d(100_000),
+                                           opened_on: Date.new(2015, 6, 1)))
+      new = run_rule(vintage_rule, subject(value: d(110_000), paid_in: d(100_000),
+                                           opened_on: Date.new(2020, 6, 1)))
+
+      assert_equal d(1_500), old.tax
+      assert_equal d(3_000), new.tax
+    end
+
+    def test_a_window_includes_both_of_its_end_dates
+      # A statutory window is written as dates people can be on, so "to
+      # 2017-12-31" has to cover an account opened on 2017-12-31.
+      last_day  = run_rule(vintage_rule, subject(value: d(110_000), paid_in: d(100_000),
+                                                 opened_on: Date.new(2017, 12, 31)))
+      first_day = run_rule(vintage_rule, subject(value: d(110_000), paid_in: d(100_000),
+                                                 opened_on: Date.new(2018, 1, 1)))
+
+      assert_equal d(1_500), last_day.tax
+      assert_equal d(3_000), first_day.tax
+    end
+
+    def test_a_windowed_rule_refuses_when_the_opening_date_is_unknown
+      # There is no defensible guess here, which is why this refuses rather
+      # than assuming the way the maturity clock does. Assuming inside the
+      # window taxes the account one way and assuming outside taxes it another;
+      # nothing about a missing date favours either, so picking one would be
+      # inventing a fact rather than reading a cautious default.
+      result = run_rule(vintage_rule, subject(value: d(110_000), paid_in: d(100_000),
+                                              opened_on: nil))
+
+      assert_nil result.tax
+      refute result.modelled?
+      assert warned?(result, "the date the account was opened")
+    end
+
+    def test_the_vintage_and_the_clock_narrow_a_term_independently
+      # Both gates on one term: opened in the 2013-2017 window *and* past its
+      # five-year mark. A 2015 account is both; a 2015 account valued in 2016
+      # would be the first without the second.
+      rule = composed(
+        terms: [
+          { base: "gain_over_paid_in", rate: "literal", literal_rate: "0.10",
+            condition: "mature", opened_until: "2017-12-31" }
+        ],
+        maturity_years: 5
+      )
+
+      inside = run_rule(rule, subject(value: d(110_000), paid_in: d(100_000),
+                                      opened_on: Date.new(2015, 6, 1)))
+      outside = run_rule(rule, subject(value: d(110_000), paid_in: d(100_000),
+                                       opened_on: Date.new(2020, 6, 1)))
+
+      assert_equal d(1_000), inside.tax
+      assert_equal 0, outside.tax, "the vintage should have excluded the only term"
+    end
+
+    def test_a_window_that_ends_before_it_starts_is_rejected
+      formula = Tax::Formula.new(
+        terms: [ { base: "full_value", rate: "flat_tax",
+                   opened_from: "2020-01-01", opened_until: "2015-01-01" } ]
+      )
+
+      refute formula.valid?
+      assert_match(/ends .* before it starts/, formula.errors.join)
+    end
+
+    def test_an_unreadable_window_bound_is_rejected_and_survives_storage
+      # Dropping the bad value on the way to storage would make the formula
+      # look valid the next time it was loaded, which turns a rejected edit
+      # into an accepted one.
+      formula = Tax::Formula.new(
+        terms: [ { base: "full_value", rate: "flat_tax", opened_from: "last Tuesday" } ]
+      )
+
+      refute formula.valid?
+      assert_match(/'opened from' is not a date/, formula.errors.join)
+      refute Tax::Formula.from(formula.to_h).valid?
+    end
+
     def test_the_clock_selects_between_terms
       rule = composed(
         terms: [

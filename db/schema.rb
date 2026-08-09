@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_08_09_120000) do
+ActiveRecord::Schema[7.2].define(version: 2026_08_09_140000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pgcrypto"
   enable_extension "plpgsql"
@@ -2093,6 +2093,16 @@ ActiveRecord::Schema[7.2].define(version: 2026_08_09_120000) do
     t.index ["account_id"], name: "index_tax_profiles_on_account_id", unique: true
   end
 
+  create_table "tax_rate_corrections", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "family_id", null: false
+    t.string "country", null: false
+    t.jsonb "overrides", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["family_id", "country"], name: "index_tax_rate_corrections_on_family_id_and_country", unique: true
+    t.index ["family_id"], name: "index_tax_rate_corrections_on_family_id"
+  end
+
   create_table "tool_calls", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "message_id", null: false
     t.string "provider_id", null: false
@@ -2470,6 +2480,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_08_09_120000) do
   add_foreign_key "tax_custom_rules", "accounts", on_delete: :cascade
   add_foreign_key "tax_custom_rules", "families", on_delete: :cascade
   add_foreign_key "tax_profiles", "accounts", on_delete: :cascade
+  add_foreign_key "tax_rate_corrections", "families", on_delete: :cascade
   add_foreign_key "tool_calls", "messages"
   add_foreign_key "trades", "securities"
   add_foreign_key "trading212_accounts", "trading212_items"

@@ -101,7 +101,8 @@ module Tax
 
         FACT_NAMES = {
           paid_in: "the total paid in",
-          cost_basis: "the cost basis of what is held"
+          cost_basis: "the cost basis of what is held",
+          opened_on: "the date the account was opened"
         }.freeze
 
         # The deducted portion, with absence read the expensive way.
@@ -194,7 +195,7 @@ module Tax
           sentences    = []
 
           formula.terms.each do |term|
-            next unless fires?(term, mature)
+            next unless fires?(term, mature, subject)
 
             amount = amount_for(term, subject, deducted)
             next if amount.nil?
@@ -221,7 +222,19 @@ module Tax
           }
         end
 
-        def fires?(term, mature)
+        # Two independent gates, and a term has to pass both.
+        #
+        # The clock asks how old the wrapper is now; the vintage asks when it
+        # was opened. A PEA opened in 2014 is mature *and* of the 2013-2017
+        # vintage, and a rule may well want to say something that is true only
+        # of both at once.
+        #
+        # `covers_opening?` is given the declared date, which is guaranteed
+        # present here: a term with a window declares :opened_on in its `needs`,
+        # so the rule has already refused the account if it is missing.
+        def fires?(term, mature, subject)
+          return false unless term.covers_opening?(subject.opened_on)
+
           case term.condition
           when "mature"   then mature
           when "immature" then !mature

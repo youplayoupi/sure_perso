@@ -10,15 +10,29 @@ module Tax
     attr_reader :country, :currency
 
     def self.load(country)
+      new(read(country))
+    end
+
+    # The parsed file, before anyone's corrections are laid over it.
+    #
+    # Separate from `load` because Tax::RateOverlay merges hashes rather than
+    # tables: a family with a corrected rate needs the shipped data to merge
+    # onto, and getting it out of a built table would mean exposing innards
+    # that are otherwise sealed by the `freeze` below.
+    def self.read(country)
       path = Tax.config_dir.join("#{country.to_s.downcase}.yml")
       raise RateError, "no rate file for country #{country}" unless File.exist?(path)
 
-      load_file(path)
+      read_file(path)
+    end
+
+    def self.read_file(path)
+      YAML.safe_load_file(path.to_s, permitted_classes: [ Date ])
     end
 
     # Split out so the rule engine can be exercised without Rails booted.
     def self.load_file(path)
-      new(YAML.safe_load_file(path.to_s, permitted_classes: [ Date ]))
+      new(read_file(path))
     end
 
     def initialize(data)

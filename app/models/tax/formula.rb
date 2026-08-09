@@ -91,14 +91,50 @@ module Tax
     CONDITIONS = %w[always mature immature].freeze
 
     # One line of the calculation.
+    #
+    # A term can be narrowed two ways, and they are different in kind:
+    #
+    #   `condition`                the maturity clock. Relative: how old is
+    #                              this wrapper on the valuation date. The PEA
+    #                              five-year mark is this.
+    #
+    #   `opened_from`/`opened_until`   the vintage. Absolute: when was the
+    #                              wrapper opened, regardless of its age now.
+    #                              French tax is full of these -- a PEA opened
+    #                              between 2013 and 2017 keeps the social-charge
+    #                              rates in force as each year's gain arose, and
+    #                              an assurance-vie signed before 27 September
+    #                              2017 is taxed on terms withdrawn for contracts
+    #                              signed after it.
+    #
+    # Both may narrow the same term. Neither implies the other: a plan opened
+    # in 2014 is old enough to be mature and is also of a particular vintage,
+    # and those two facts select different terms.
+    #
+    # A term with a vintage window needs the opening date the way a term over
+    # the gain needs the payments in, so it says so through the same `needs`
+    # channel and the rule refuses the account when it is missing. There is no
+    # defensible guess: assuming a wrapper falls inside the window taxes it one
+    # way, assuming outside taxes it another, and nothing about a null date
+    # favours either.
     class Term
-      attr_reader :base, :rate, :literal_rate, :condition
+      attr_reader :base, :rate, :literal_rate, :condition, :opened_from, :opened_until
 
-      def initialize(base:, rate:, literal_rate: nil, condition: "always")
+      def initialize(base:, rate:, literal_rate: nil, condition: "always",
+                     opened_from: nil, opened_until: nil)
         @base = base.to_s
         @rate = rate.to_s
         @literal_rate = literal_rate.nil? ? nil : BigDecimal(literal_rate.to_s)
         @condition = condition.to_s
+
+        # The raw values are kept beside the parsed ones so that an unreadable
+        # date survives a round trip through storage. Dropping it would make
+        # the formula look valid the second time it was loaded, which is how a
+        # rejected edit quietly becomes an accepted one.
+        @opened_from_raw = presence(opened_from)
+        @opened_until_raw = presence(opened_until)
+        @opened_from = to_date(@opened_from_raw)
+        @opened_until = to_date(@opened_until_raw)
         freeze
       end
 
@@ -108,13 +144,17 @@ module Tax
           base: h["base"],
           rate: h["rate"],
           literal_rate: h["literal_rate"],
-          condition: h["condition"] || "always"
+          condition: h["condition"] || "always",
+          opened_from: h["opened_from"],
+          opened_until: h["opened_until"]
         )
       end
 
       def to_h
         { "base" => base, "rate" => rate, "condition" => condition }.tap do |h|
           h["literal_rate"] = literal_rate.to_s("F") if literal?
+          h["opened_from"] = @opened_from_raw.to_s if @opened_from_raw
+          h["opened_until"] = @opened_until_raw.to_s if @opened_until_raw
         end
       end
 
@@ -124,7 +164,31 @@ module Tax
 
       def conditional? = condition != "always"
 
-      def needs = BASES.fetch(base, { needs: [] })[:needs]
+      # Bounded on either side. Half-open is the common case: "opened before
+      # 2018" is a window with no start.
+      def vintage? = !@opened_from_raw.nil? || !@opened_until_raw.nil?
+
+      # Inclusive at both ends, because a statutory window is written as dates
+      # people can be on. "From 2013-01-01 to 2017-12-31" has to include both.
+      #
+      # An unreadable bound makes the whole formula invalid, so a rule never
+      # reaches this with one. If some future caller does, a window nobody can
+      # read matches nothing rather than everything -- refusing to fire is the
+      # direction that cannot quietly under-tax.
+      def covers_opening?(opened_on)
+        return true unless vintage?
+        return false if opened_on.nil?
+        return false unless bounds_readable?
+        return false if opened_from && opened_on < opened_from
+        return false if opened_until && opened_on > opened_until
+
+        true
+      end
+
+      def needs
+        facts = BASES.fetch(base, { needs: [] })[:needs]
+        vintage? ? (facts + [ :opened_on ]).uniq : facts
+      end
 
       # Collected rather than raised on, so that a form can show every problem
       # at once and a row written by a future version of this module degrades
@@ -141,8 +205,52 @@ module Tax
           problems << "a rate of #{literal_rate.to_s('F')} is not between 0 and 1"
         end
 
+        problems.concat(vintage_errors)
         problems
       end
+
+      private
+        def bounds_readable?
+          (@opened_from_raw.nil? || !opened_from.nil?) &&
+            (@opened_until_raw.nil? || !opened_until.nil?)
+        end
+
+        def vintage_errors
+          problems = []
+          problems << "'opened from' is not a date" if @opened_from_raw && opened_from.nil?
+          problems << "'opened until' is not a date" if @opened_until_raw && opened_until.nil?
+
+          if opened_from && opened_until && opened_from > opened_until
+            problems << "the opening window ends (#{opened_until}) before it starts " \
+                        "(#{opened_from}), so no account could ever fall inside it"
+          end
+
+          problems
+        end
+
+        def presence(value)
+          value.nil? || value.to_s.strip.empty? ? nil : value
+        end
+
+        # Returns nil rather than raising, so an unreadable date is one more
+        # line in `errors` beside the others instead of a 500 on a form someone
+        # was halfway through. `vintage_errors` tells the two nils apart by
+        # looking at the raw value.
+        #
+        # Date.parse is not used on its own because it is generous: "2026" and
+        # "1 Jan" both succeed and neither is what the author typed. The rate
+        # file writes plain ISO dates and so does the form.
+        def to_date(value)
+          return nil if value.nil?
+          return value if value.is_a?(Date)
+
+          text = value.to_s.strip
+          return nil unless /\A\d{4}-\d{2}-\d{2}\z/.match?(text)
+
+          Date.parse(text)
+        rescue ArgumentError, TypeError
+          nil
+        end
     end
 
     attr_reader :terms, :maturity_years, :notes
@@ -182,6 +290,11 @@ module Tax
     def empty? = terms.empty?
 
     def uses_clock? = terms.any?(&:conditional?)
+
+    # Whether any term is narrowed to a range of opening dates. Distinct from
+    # `uses_clock?`: one asks how old the wrapper is, the other asks when it
+    # was opened, and a rule can use either, both or neither.
+    def uses_vintage? = terms.any?(&:vintage?)
 
     def stacks? = terms.any?(&:progressive?)
 

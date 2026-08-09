@@ -2,7 +2,7 @@
 
 require "test_helper"
 
-# The Rails half of the module: the two tables, and the one class that turns
+# The Rails half of the module: the three tables, and the one class that turns
 # Sure's records into the value objects the engine consumes.
 #
 # The arithmetic is not retested here -- engine_test.rb already covers it
@@ -173,6 +173,72 @@ module Tax
       built = Catalogue.build("composed", { "terms" => [], "invented_later" => true })
 
       assert_instance_of Rules::Composed, built
+    end
+  end
+
+  # -------------------------------------------------------------------------
+
+  class RateCorrectionTest < ActiveSupport::TestCase
+    setup do
+      @family = families(:dylan_family)
+      Tax.reset_rate_tables!
+    end
+
+    teardown { Tax.reset_rate_tables! }
+
+    test "a family with no corrections gets the shipped table, not a rebuilt one" do
+      # Identity, not equality. Rebuilding the table per request for the
+      # overwhelming majority of families who have corrected nothing would be
+      # a parse of the YAML on every page load.
+      assert_same Tax.rate_table("FR"), Tax.rate_table_for(@family, "FR")
+    end
+
+    test "a correction changes what the family's report uses and nobody else's" do
+      RateCorrection.create!(
+        family: @family, country: "FR",
+        overrides: { "social_charges" => [ { "effective_from" => "2026-01-01", "rate" => 0.20 } ] }
+      )
+
+      on = Date.new(2026, 6, 1)
+
+      assert_equal BigDecimal("0.20"), Tax.rate_table_for(@family, "FR").social_charges(on)
+      assert_equal BigDecimal("0.186"), Tax.rate_table_for(families(:empty), "FR").social_charges(on)
+      assert_equal BigDecimal("0.186"), Tax.rate_table("FR").social_charges(on),
+                   "the shipped table has been mutated -- this leaks one family's rates to everyone"
+    end
+
+    test "a correction that is not a rate the module reads is refused" do
+      row = RateCorrection.new(
+        family: @family, country: "FR",
+        overrides: { "social_charges" => [ { "effective_from" => "2026-01-01", "rate" => 20 } ] }
+      )
+
+      assert_not row.valid?
+      assert_match(/not between 0 and 1/, row.errors[:overrides].join)
+    end
+
+    test "a country with no rate file cannot be corrected" do
+      row = RateCorrection.new(family: @family, country: "ZZ", overrides: {})
+
+      assert_not row.valid?
+      assert_includes row.errors[:country], "has no rate file in this module yet"
+    end
+
+    test "one document per family per country" do
+      RateCorrection.create!(family: @family, country: "FR")
+      duplicate = RateCorrection.new(family: @family, country: "fr")
+
+      assert_not duplicate.valid?, "country should be normalised before the uniqueness check"
+    end
+
+    test "corrections survive a round trip through jsonb" do
+      RateCorrection.create!(
+        family: @family, country: "FR",
+        overrides: { "products" => { "pea" => { "maturity_years" => 8 } } }
+      )
+
+      assert_equal 8, Tax.rate_table_for(@family, "FR").maturity_years("pea")
+      assert_equal [ "products" ], RateCorrection.for(@family, "FR").edited_sections
     end
   end
 

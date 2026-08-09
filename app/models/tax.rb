@@ -33,11 +33,38 @@ module Tax
     # `reset_rate_tables!` after editing a YAML file in development.
     def rate_table(country = DEFAULT_COUNTRY)
       @rate_tables ||= {}
-      @rate_tables[country.to_s.upcase] ||= RateTable.load(country)
+      @rate_tables[country.to_s.upcase] ||= RateTable.new(rate_data(country))
+    end
+
+    # The shipped file as parsed, memoised, and shared by every family. Only
+    # Tax::RateOverlay should want this, and only to merge onto -- which it
+    # does into a copy, because a merge that wrote here would put one family's
+    # corrections into everyone else's report.
+    def rate_data(country = DEFAULT_COUNTRY)
+      @rate_data ||= {}
+      @rate_data[country.to_s.upcase] ||= RateTable.read(country)
+    end
+
+    # The rates as this family sees them: the shipped file, plus whatever they
+    # have corrected.
+    #
+    # Deliberately not memoised. The cache above is keyed on country and lives
+    # for the life of the process, which is right for a file on disk and wrong
+    # for a row someone can edit and expect to see take effect. Callers that
+    # need it more than once in a request hold onto it themselves -- see
+    # TaxReportsController#rates.
+    def rate_table_for(family, country = nil)
+      country = (country.presence || family&.country.presence || DEFAULT_COUNTRY).to_s.upcase
+      overrides = family && RateCorrection.overrides_for(family, country)
+
+      return rate_table(country) if overrides.nil? || overrides.empty?
+
+      RateTable.new(RateOverlay.apply(rate_data(country), overrides))
     end
 
     def reset_rate_tables!
       @rate_tables = {}
+      @rate_data = {}
     end
 
     def config_dir

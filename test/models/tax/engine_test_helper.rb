@@ -30,6 +30,7 @@ module TaxEngineTestHelper
   ENGINE = %w[
     tax
     tax/rate_table
+    tax/rate_overlay
     tax/assumptions
     tax/subject
     tax/result
