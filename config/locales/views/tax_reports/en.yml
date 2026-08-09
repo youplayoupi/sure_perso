@@ -1,0 +1,64 @@
+---
+en:
+  tax_reports:
+    show:
+      title: After tax
+      subtitle: What you would keep if you liquidated everything on %{date}.
+      unsupported_title: No rules for %{country} yet
+      unsupported_body: >-
+        This module ships tax rules for France only. Nothing is computed for
+        other countries, because a plausible-looking wrong number is worse than
+        no number. Adding a country means adding a rate file and a set of rules.
+      gross: Gross
+      tax: Tax
+      net: Net
+      net_upper_bound: Net (upper bound)
+      effective_rate: Effective rate
+      modelled_rate: Rate on what was computed
+      incomplete_title: >-
+        %{count} accounts could not be computed
+      incomplete_body: >-
+        Their value is included in the gross but no tax is deducted for them,
+        so the net above is an upper bound rather than an answer.
+      per_account: Account by account
+      warnings: Things worth checking
+      audit: Where this disagrees with how Sure classifies the account
+      coverage: What this module covers
+      coverage_body: >-
+        Every product Sure knows about, and whether there is a rule for it. A
+        subtype added in a future Sure release appears here as uncovered on the
+        day you upgrade, rather than being quietly taxed by a rule written for
+        something else.
+      assumptions: Assumptions
+      assumptions_body: >-
+        None of this is observed. All of it is asserted, by you or by the
+        defaults, and the numbers above are only as good as it is.
+      projection: Gross against net over time
+      declare: Declare
+      no_accounts: No accounts in scope.
+  tax:
+    profiles:
+      edit:
+        title: Tax facts for %{account}
+        intro: >-
+          Three things this module needs that Sure has nowhere to store. Leave
+          anything you do not know blank: blank means unknown, and unknown is
+          reported as unknown. It is never treated as zero.
+        paid_in_hint: >-
+          Everything you have ever paid into this wrapper. This is not the cost
+          basis of what you hold now — reinvest a dividend and cost basis rises
+          while payments in do not.
+        opened_on_hint: >-
+          The date of the first payment, which is what starts a five-year clock,
+          not the date the contract was signed.
+        product_hint: >-
+          Only needed when Sure's own subtype is not specific enough. A Livret A,
+          an LDDS and an ordinary taxable livret are all "savings" to Sure.
+        deducted_hint: >-
+          For pension wrappers: the part of your payments you deducted from
+          taxable income. Blank assumes all of it, which is the higher-tax
+          assumption.
+        save: Save
+        cancel: Cancel
+      update:
+        saved: Saved the tax facts for %{account}.

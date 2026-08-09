@@ -40,6 +40,11 @@ module Tax
     # you keep paying in.
     def grow(subject, years)
       return subject if years.zero?
+      # An account with no value is one the report could not price at all --
+      # most often a currency with no exchange rate on file. Compounding an
+      # unknown gives an unknown, and it stays unknown for every year of the
+      # projection rather than becoming zero somewhere along the way.
+      return subject if subject.value.nil?
 
       factor = (BigDecimal(1) + @assumptions.expected_return) ** years
 

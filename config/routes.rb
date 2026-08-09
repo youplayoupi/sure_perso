@@ -382,6 +382,17 @@ Rails.application.routes.draw do
   # Hub page fronting budgets + goals under a single "Plan" nav entry.
   resource :plan, only: :show
 
+  # After-tax reporting. One read-only page, plus a form per account for
+  # declaring the facts Sure has nowhere else to store. This block and the nav
+  # entry in layouts/application.html.erb are the only two edits this module
+  # makes to files that already existed.
+  resource :tax_report, only: :show
+  namespace :tax do
+    resources :accounts, only: [] do
+      resource :profile, only: %i[edit update]
+    end
+  end
+
   resources :budgets, only: %i[index show edit update], param: :month_year do
     post :copy_previous, on: :member
     get :picker, on: :collection

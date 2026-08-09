@@ -111,6 +111,8 @@ module Tax
     end
 
     def apply(subject, on:, rates:, assumptions:)
+      return unvalued(subject) if subject.value.nil?
+
       resolve(subject).call(subject, on: on, rates: rates, assumptions: assumptions)
     end
 
@@ -147,6 +149,33 @@ module Tax
     end
 
     private
+      # A subject whose value could not be established in the report's currency.
+      #
+      # Every rule assumes it has been handed a number to work from, so rather
+      # than letting each one discover the nil separately -- and probably
+      # differently -- the dispatch point refuses once, here. In practice this
+      # fires when an account is held in a currency with no exchange rate on
+      # file: see Tax::SubjectBuilder, which declines to invent one.
+      def unvalued(subject)
+        Result.new(
+          account_id: subject.id,
+          account_name: subject.name,
+          accountable_type: subject.accountable_type,
+          subtype: subject.subtype,
+          product: subject.product,
+          currency: subject.currency,
+          gross: nil,
+          taxable_base: nil,
+          tax: nil,
+          basis: "cannot be computed",
+          modelled: false,
+          warnings: [
+            "This account's value could not be expressed in #{subject.currency}, " \
+            "so it is excluded from the totals entirely -- not counted as zero."
+          ]
+        )
+      end
+
       def sort(subjects)
         subjects.sort_by { |s| [ s.accountable_type.to_s, s.subtype.to_s, s.name.to_s, s.id.to_s ] }
       end

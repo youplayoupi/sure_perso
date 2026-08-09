@@ -1,0 +1,390 @@
+# frozen_string_literal: true
+
+require "test_helper"
+
+# The Rails half of the module: the two tables, and the one class that turns
+# Sure's records into the value objects the engine consumes.
+#
+# The arithmetic is not retested here -- engine_test.rb already covers it
+# without a database, and repeating it through fixtures would only make it
+# slower to find out which layer broke. What is tested here is the boundary:
+# that the right facts reach the engine, and that nothing this module adds can
+# damage anything Sure already does.
+module Tax
+  class ProfileTest < ActiveSupport::TestCase
+    setup do
+      @account = accounts(:investment)
+      # The fixtures are a US family. `product` only means anything for a
+      # country this module has rules for, so the country is set explicitly
+      # rather than left to chance -- an earlier version of this test passed
+      # for the wrong reason because the validation was skipping on US.
+      @account.family.update!(country: "FR")
+    end
+
+    test "a product cannot be set for a country this module has no rules for" do
+      @account.family.update!(country: "US")
+      profile = Profile.new(account: @account, product: "pea")
+
+      assert_not profile.valid?
+      assert_match(/no tax rules for US/, profile.errors[:product].first)
+    end
+
+    test "an account has at most one profile" do
+      Profile.create!(account: @account, paid_in: 1000)
+
+      duplicate = Profile.new(account: @account, paid_in: 2000)
+
+      assert_not duplicate.valid?
+      assert_includes duplicate.errors[:account_id], "has already been taken"
+    end
+
+    test "a blank declaration is valid because a half-filled form must be savable" do
+      assert Profile.new(account: @account).valid?
+    end
+
+    test "an unknown product is rejected before it can silently fall through" do
+      profile = Profile.new(account: @account, product: "livretA")
+
+      assert_not profile.valid?
+      assert_match(/not a product this module knows about/, profile.errors[:product].first)
+    end
+
+    test "a known product is accepted" do
+      assert Profile.new(account: @account, product: "livret_a").valid?
+    end
+
+    test "a future opening date is rejected" do
+      profile = Profile.new(account: @account, opened_on: Date.current + 1)
+
+      assert_not profile.valid?
+    end
+
+    test "a deduction larger than the payments is saved, and flagged rather than blocked" do
+      profile = Profile.new(account: @account, paid_in: 100, paid_in_deducted: 200)
+
+      assert profile.valid?, "the user may still be typing"
+      assert profile.deduction_exceeds_payments?
+    end
+
+    test "deleting the account takes the profile with it and does not raise" do
+      Profile.create!(account: @account, paid_in: 1000)
+
+      assert_difference -> { Profile.count }, -1 do
+        @account.destroy
+      end
+    end
+  end
+
+  # -------------------------------------------------------------------------
+
+  class CustomRuleTest < ActiveSupport::TestCase
+    setup do
+      @family = families(:dylan_family)
+      @account = accounts(:investment)
+    end
+
+    test "kind must name a rule from the catalogue" do
+      rule = CustomRule.new(family: @family, accountable_type: "Investment", kind: "Kernel")
+
+      assert_not rule.valid?
+      assert_includes rule.errors[:kind], "is not a rule this module offers"
+    end
+
+    test "a catalogue kind builds a real rule object" do
+      rule = CustomRule.new(
+        family: @family, accountable_type: "Investment",
+        subtype: "per", kind: "fr_capital_and_gains"
+      )
+
+      assert rule.valid?
+      assert_instance_of Rules::Fr::CapitalAndGains, rule.to_rule
+    end
+
+    test "a rule targets either an account or a type, never both" do
+      both = CustomRule.new(
+        family: @family, account: @account,
+        accountable_type: "Investment", kind: "fr_pea"
+      )
+      neither = CustomRule.new(family: @family, kind: "fr_pea")
+
+      assert_not both.valid?
+      assert_not neither.valid?
+    end
+
+    test "a rule cannot be pinned to another family's account" do
+      rule = CustomRule.new(family: families(:empty), account: @account, kind: "fr_pea")
+
+      assert_not rule.valid?
+      assert_includes rule.errors[:account], "does not belong to this family"
+    end
+
+    test "a kind no longer offered degrades to no rule instead of raising" do
+      # Simulates a row written by a future version of the module and read back
+      # by an older one. The engine already handles a missing rule by refusing
+      # to compute; blowing up the whole report would be worse.
+      assert_nil Catalogue.build("fr_something_removed")
+    end
+  end
+
+  # -------------------------------------------------------------------------
+
+  class CatalogueTest < ActiveSupport::TestCase
+    test "every advertised kind builds and is a rule" do
+      Catalogue.kinds.each do |kind|
+        rule = Catalogue.build(kind)
+
+        assert_kind_of Rules::Base, rule, "#{kind} did not build a rule"
+        assert_equal kind, rule.rule_id, "#{kind} builds a rule with a different id"
+      end
+    end
+
+    test "every kind has a description, because a menu of bare identifiers is not a choice" do
+      Catalogue.kinds.each do |kind|
+        assert Catalogue.description(kind).present?, "#{kind} has no description"
+      end
+    end
+  end
+
+  # -------------------------------------------------------------------------
+
+  class SubjectBuilderTest < ActiveSupport::TestCase
+    setup do
+      @family = families(:dylan_family)
+      @family.update!(country: "FR")
+
+      # A French family holding euros: the base case, and the one where no
+      # conversion happens at all. The currency tests further down override
+      # this explicitly, so that a test about payments in is not quietly also a
+      # test about exchange rates.
+      @family.accounts.update_all(currency: "EUR")
+      @builder = SubjectBuilder.new(@family)
+    end
+
+    test "the country comes from the family, falling back to the default" do
+      assert_equal "FR", SubjectBuilder.new(@family).country
+
+      @family.update_column(:country, nil)
+      assert_equal Tax::DEFAULT_COUNTRY, SubjectBuilder.new(@family).country
+    end
+
+    test "liabilities are out of scope" do
+      types = @builder.subjects.map(&:accountable_type)
+
+      assert_not_includes types, "CreditCard"
+      assert_not_includes types, "Loan"
+      assert_not_includes types, "OtherLiability"
+    end
+
+    test "it carries Sure's own subtype rather than inventing one" do
+      account = accounts(:investment)
+      account.update!(subtype: "brokerage")
+
+      subject = SubjectBuilder.new(@family).subjects.find { |s| s.id == account.id }
+
+      assert_equal "Investment", subject.accountable_type
+      assert_equal "brokerage", subject.subtype
+    end
+
+    test "a nil subtype stays nil rather than being guessed at" do
+      account = accounts(:investment)
+      account.update!(subtype: nil)
+
+      subject = SubjectBuilder.new(@family).subjects.find { |s| s.id == account.id }
+
+      assert_nil subject.subtype
+    end
+
+    test "declared facts reach the engine" do
+      account = accounts(:investment)
+      Profile.create!(
+        account: account, product: "pea",
+        opened_on: Date.new(2015, 1, 1), paid_in: 1234.56
+      )
+
+      subject = SubjectBuilder.new(@family).subjects.find { |s| s.id == account.id }
+
+      assert_equal "pea", subject.product
+      assert_equal Date.new(2015, 1, 1), subject.opened_on
+      assert_equal BigDecimal("1234.56"), subject.paid_in
+      assert_includes subject.declared, :paid_in
+    end
+
+    test "an account with no profile is unchanged from before this module existed" do
+      subject = @builder.subjects.find { |s| s.id == accounts(:investment).id }
+
+      assert_nil subject.product
+      assert_nil subject.paid_in
+      assert_nil subject.opened_on
+      assert_empty subject.declared
+    end
+
+    test "cost basis is nil rather than a partial sum when a holding is missing one" do
+      account = accounts(:investment)
+      account.holdings.update_all(cost_basis: nil)
+
+      subject = SubjectBuilder.new(@family).subjects.find { |s| s.id == account.id }
+
+      # A partial sum understates cost basis, which overstates the gain, which
+      # overstates the tax while looking authoritative. Nil makes the rule say
+      # so out loud instead.
+      assert_nil subject.cost_basis
+    end
+
+    test "it reads Sure's tax_treatment without acting on it" do
+      subject = @builder.subjects.find { |s| s.id == accounts(:investment).id }
+
+      assert_includes [ nil, :taxable, :tax_deferred, :tax_exempt, :tax_advantaged ],
+                      subject.tax_treatment
+    end
+
+    test "a custom rule for the family reaches the registry" do
+      CustomRule.create!(
+        family: @family, accountable_type: "Investment",
+        subtype: accounts(:investment).subtype, kind: "fr_capital_and_gains"
+      )
+
+      registry = SubjectBuilder.new(@family).registry
+
+      assert registry.custom?("Investment", accounts(:investment).subtype)
+    end
+
+    # -- currency ----------------------------------------------------------
+    #
+    # The thresholds this module applies are euro amounts, not ratios, so the
+    # arithmetic has to reach the rules already denominated in euros. These
+    # tests exist because the first version of the report summed dollars and
+    # printed the total with a euro sign.
+
+    test "the report is denominated in the rate table's currency, not the family's" do
+      @family.update!(currency: "USD")
+
+      assert_equal "EUR", SubjectBuilder.new(@family).report_currency
+    end
+
+    test "every subject carries the report currency, so the total can be summed at all" do
+      currencies = SubjectBuilder.new(@family).subjects.map(&:currency).uniq
+
+      assert_equal [ "EUR" ], currencies
+    end
+
+    test "a foreign balance is converted rather than added as if it were euros" do
+      account = accounts(:investment)
+      account.update!(currency: "USD")
+      ExchangeRate.create!(from_currency: "USD", to_currency: "EUR",
+                           rate: 0.5, date: Date.current)
+
+      subject = SubjectBuilder.new(@family).subjects.find { |s| s.id == account.id }
+
+      assert_equal BigDecimal(account.balance.to_s) * BigDecimal("0.5"), subject.value
+    end
+
+    test "declared payments are converted too, or the gain would be computed off two scales" do
+      account = accounts(:investment)
+      account.update!(currency: "USD")
+      Profile.create!(account: account, paid_in: 1000)
+      ExchangeRate.create!(from_currency: "USD", to_currency: "EUR",
+                           rate: 0.5, date: Date.current)
+
+      subject = SubjectBuilder.new(@family).subjects.find { |s| s.id == account.id }
+
+      assert_equal BigDecimal("500"), subject.paid_in
+    end
+
+    test "no rate on file means no value, not a rate of one" do
+      # Sure's own rates_for falls back to 1 and logs. For a net worth widget
+      # that is a reasonable trade; here it would state that a dollar is a euro.
+      account = accounts(:investment)
+      account.update!(currency: "USD")
+      ExchangeRate.where(from_currency: "USD", to_currency: "EUR").delete_all
+
+      subject = SubjectBuilder.new(@family).subjects.find { |s| s.id == account.id }
+
+      assert_nil subject.value
+    end
+
+    test "a rate older than the lookback window is not used" do
+      account = accounts(:investment)
+      account.update!(currency: "USD")
+      ExchangeRate.where(from_currency: "USD", to_currency: "EUR").delete_all
+      ExchangeRate.create!(from_currency: "USD", to_currency: "EUR", rate: 0.5,
+                           date: Date.current - (SubjectBuilder::RATE_LOOKBACK_DAYS + 1))
+
+      subject = SubjectBuilder.new(@family).subjects.find { |s| s.id == account.id }
+
+      assert_nil subject.value
+    end
+
+    test "the most recent rate in the window wins" do
+      account = accounts(:investment)
+      account.update!(currency: "USD")
+      ExchangeRate.where(from_currency: "USD", to_currency: "EUR").delete_all
+      ExchangeRate.create!(from_currency: "USD", to_currency: "EUR", rate: 0.4,
+                           date: Date.current - 10)
+      ExchangeRate.create!(from_currency: "USD", to_currency: "EUR", rate: 0.9,
+                           date: Date.current - 1)
+
+      subject = SubjectBuilder.new(@family).subjects.find { |s| s.id == account.id }
+
+      assert_equal BigDecimal(account.balance.to_s) * BigDecimal("0.9"), subject.value
+    end
+
+    test "an unvalued account is refused rather than taxed as zero" do
+      subject = Subject.new(name: "Unconvertible", value: nil,
+                            accountable_type: "Depository", subtype: "checking",
+                            currency: "EUR")
+
+      result = Registry.new(country: "FR").apply(
+        subject, on: Date.current,
+        rates: Tax.rate_table("FR"), assumptions: Assumptions.new
+      )
+
+      assert_not result.modelled?
+      assert_nil result.tax
+      assert_nil result.gross
+      assert_match(/excluded from the totals/, result.warnings.join(" "))
+    end
+
+    test "it issues no writes" do
+      # The strongest claim this module makes is that it cannot change any of
+      # Sure's numbers. Asserting it is cheap; trusting it is not.
+      assert_no_changes -> { [ Account.count, Holding.count, Entry.count, Balance.count ] } do
+        SubjectBuilder.new(@family).subjects
+      end
+    end
+  end
+
+  # -------------------------------------------------------------------------
+
+  class CoverageTest < ActiveSupport::TestCase
+    setup do
+      @coverage = Coverage.new(Registry.new(country: "FR"))
+    end
+
+    test "it enumerates every type Sure knows about" do
+      assert_equal Accountable::TYPES.sort, @coverage.by_type.keys.sort
+    end
+
+    test "a subtype with no rule is reported as uncovered rather than omitted" do
+      # This is the whole point: a future Sure release adding a subtype must
+      # show up here on upgrade day, not be quietly swept into another rule.
+      assert_operator @coverage.uncovered_count, :>, 0
+      assert @coverage.uncovered.all? { |e| e.rule_id.nil? }
+    end
+
+    test "covered entries name the rule that will actually run" do
+      pea = @coverage.entries.find { |e| e.accountable_type == "Investment" && e.subtype == "pea" }
+
+      assert pea.covered?
+      assert_equal "fr_pea", pea.rule_id
+    end
+
+    test "an uncovered entry suggests a rule from Sure's own classification" do
+      suggested = @coverage.uncovered.select(&:suggested_rule_id)
+
+      suggested.each do |entry|
+        assert Catalogue.include?(entry.suggested_rule_id),
+               "#{entry.label} suggests #{entry.suggested_rule_id}, which is not in the catalogue"
+      end
+    end
+  end
+end
