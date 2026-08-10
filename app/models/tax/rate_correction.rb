@@ -60,8 +60,23 @@ module Tax
       # for a profile: a bad rate does not refuse to compute, it computes
       # confidently and wrongly, and there is no run-time refusal downstream to
       # catch it the way Rules::Composed catches a bad formula.
+      #
+      # The sections that may be corrected are read off the country's own file
+      # rather than listed anywhere, so a correction naming a section this
+      # country does not have is rejected here with its name in the message
+      # instead of being silently dropped at merge time. The lookup is skipped
+      # for a country with no file, because the presence validation above is
+      # already saying the more useful thing about that row.
       def corrections_are_readable
-        Tax::RateOverlay.errors(overrides).each { |message| errors.add(:overrides, message) }
+        Tax::RateOverlay
+          .errors(overrides, known_sections: known_sections)
+          .each { |message| errors.add(:overrides, message) }
+      end
+
+      def known_sections
+        return nil if country.blank? || !Tax.supported?(country)
+
+        Tax::RateOverlay.dated_sections(Tax.rate_data(country))
       end
   end
 end

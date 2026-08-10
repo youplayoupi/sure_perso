@@ -16,7 +16,11 @@ module Tax
       # product is not taxed at all.
       formula terms: []
 
-      def initialize(reason: "exempt from income tax and social charges")
+      # The default reason is the same sentence Rules::Fr::Deposit uses for a
+      # Livret A, and deliberately the same key: two products exempt for the
+      # same reason should not read as two slightly different exemptions
+      # because two translators were handed the sentence twice.
+      def initialize(reason: Message.new("exempt.basis"))
         @reason = reason
       end
 
@@ -26,9 +30,7 @@ module Tax
         ceiling = rates.ceiling(subject.product) if subject.product
         if ceiling && subject.value && subject.value > ceiling
           # Not an error: interest capitalises above the ceiling quite legally.
-          warnings << "Balance exceeds the #{ceiling.to_i} deposit ceiling. That is " \
-                      "normal once interest has capitalised, but a balance far above " \
-                      "it may mean the product is misidentified."
+          warnings << msg("exempt.exceeds_ceiling", ceiling: ceiling.to_i)
         end
 
         result(

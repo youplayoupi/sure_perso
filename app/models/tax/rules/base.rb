@@ -30,7 +30,7 @@ module Tax
         # that is not what ran.
         #
         # Where it is declared it is not documentation, because
-        # test/models/tax/formula_equivalence_test.rb runs it through
+        # test/models/tax/formula_test.rb runs it through
         # Rules::Composed and demands the same tax to the cent as the method
         # below. A formula that falls out of step with its rule fails the
         # build.
@@ -72,6 +72,27 @@ module Tax
           BigDecimal(0)
         end
 
+        # A sentence, named. See Tax::Message for why the English is not here.
+        def msg(key, **args)
+          Message.new(key, args)
+        end
+
+        # The two formatters every message argument goes through.
+        #
+        # Both exist so that a number is written the same way wherever it
+        # appears -- a rate as "31.4%" in one warning and "31.40 %" in the next
+        # reads like two different rates to anyone not looking for the trick.
+        # The percent sign belongs to the value rather than to the template
+        # because templates may not contain a literal one; Tax::Messages says
+        # why.
+        def percent(rate, places = 1)
+          format("%.#{places}f%%", rate * 100)
+        end
+
+        def amount(value)
+          value.to_s("F")
+        end
+
         def result(subject, **attrs)
           Result.new(
             account_id: subject.id,
@@ -89,14 +110,14 @@ module Tax
         # would do but is missing an input it is not willing to guess.
         def refuse(subject, reason:, needs:, extra_warnings: [])
           warnings = [ reason ]
-          warnings << "Declare #{needs} for this account to compute it."
+          warnings << msg("base.declare", needs: needs)
           warnings.concat(Array(extra_warnings))
 
           result(
             subject,
             taxable_base: nil,
             tax: nil,
-            basis: "cannot be computed",
+            basis: msg("base.cannot_be_computed"),
             warnings: warnings,
             modelled: false
           )
@@ -112,9 +133,8 @@ module Tax
 
           gain = subject.gain_against(subject.cost_basis)
           [
-            "For reference only: cost basis is #{subject.cost_basis.to_s('F')} " \
-            "giving a gain of #{gain.to_s('F')}. Cost basis is not the same as " \
-            "money paid in and is not used here."
+            msg("base.cost_basis_footnote",
+                cost_basis: amount(subject.cost_basis), gain: amount(gain))
           ]
         end
     end

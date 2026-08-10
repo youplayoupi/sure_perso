@@ -44,26 +44,61 @@ module Tax
 
     # -- rates -------------------------------------------------------------
 
-    def social_charges(on)
-      dec(effective("social_charges", on).fetch("rate"))
+    # Every rate this file defines, by the name the file gives it, in force on
+    # the valuation date.
+    #
+    # Nothing in here is named after a French tax. The country file declares
+    # its own rates, this reads them back, and a formula term written by a
+    # household refers to them by the same names -- so a second country is a
+    # second YAML file and no change to the engine. The two French helpers
+    # below exist only because the hand-written French rules are allowed to
+    # know they are French; generic code goes through here.
+    def rate(name, on)
+      key = name.to_s
+      return composite(key, on) if composite?(key)
+
+      dec(effective(key, on).fetch("rate"))
     end
 
-    def flat_tax_income_component(on)
-      dec(effective("flat_tax_income_component", on).fetch("rate"))
+    # Whether a name a formula asked for is something this file defines. Used
+    # to refuse an account whose rule names a rate the country does not have,
+    # rather than treating the missing rate as zero.
+    def rate?(name)
+      key = name.to_s
+      composite?(key) || dated_section?(key)
     end
 
-    # PFU: income component plus social charges. 30% through 2025, 31.4% from
-    # 2026. Derived rather than stored so the two can never drift apart.
-    def flat_tax(on)
-      flat_tax_income_component(on) + social_charges(on)
+    # The rate names a rule may use, for the rule builder's menu and for the
+    # rates screen's list of things a household may correct.
+    #
+    # Discovered from the file rather than listed in Ruby: a section is any
+    # top-level list of entries carrying an `effective_from` and a `rate`.
+    # That is what stops a new section added to a country file from being
+    # invisible to the two screens that exist to show the file.
+    def rate_names
+      (dated_section_names + composites.keys).uniq.sort
     end
 
-    # [[upper_bound_or_nil, rate], ...]
-    def brackets(on)
-      effective("income_tax_brackets", on).fetch("brackets").map do |b|
-        [ b["upto"].nil? ? nil : dec(b["upto"]), dec(b["rate"]) ]
-      end
+    def dated_section_names
+      RateOverlay.dated_sections(@data)
     end
+
+    # Sections whose entries are something other than a single rate -- today
+    # nothing, but the shape is what `entries_for` and the rates screen walk,
+    # and a country whose file carries, say, a table of allowances would land
+    # here rather than needing a new branch.
+    def composites
+      (@data["composites"] || {}).transform_values { |parts| Array(parts).map(&:to_s) }
+    end
+
+    # Two French names, spelled out because the hand-written French rules read
+    # better for having them and because `flat_tax` is the one rate a reader
+    # will look for by name. Both are `rate` underneath: correcting the social
+    # charges on the rates screen moves these too, and there is no second copy
+    # of the number to fall out of step.
+    def social_charges(on) = rate("social_charges", on)
+
+    def flat_tax(on) = rate("flat_tax", on)
 
     # The whole schedule for a dated section, not just the entry in force.
     #
@@ -112,50 +147,26 @@ module Tax
       Array(@data["unmodelled"]).select { |u| Array(u["applies_to"]).include?(name.to_s) }
     end
 
-    # -- progressive income tax --------------------------------------------
-
-    # Tax on `taxable` under the quotient familial: divide by parts, tax each
-    # part through the brackets, multiply back.
-    def income_tax(taxable, on:, parts: BigDecimal(1))
-      return BigDecimal(0) if taxable <= 0
-
-      per_part = taxable / parts
-      total = BigDecimal(0)
-      lower = BigDecimal(0)
-
-      brackets(on).each do |upto, rate|
-        if upto.nil?
-          total += [ BigDecimal(0), per_part - lower ].max * rate
-          break
-        end
-
-        span = [ per_part, upto ].min - lower
-        total += span * rate if span > 0
-        break if per_part <= upto
-
-        lower = upto
-      end
-
-      total * parts
-    end
-
-    # The extra tax caused by stacking `additional` on top of `other_income`.
-    #
-    # This is the only honest way to tax a lump sum: a EUR 51k withdrawal can
-    # push the taxpayer through two brackets, so applying a single flat
-    # marginal rate to the whole amount is wrong in both directions depending
-    # on where they started.
-    def marginal_income_tax(additional, other_income:, on:, parts: BigDecimal(1))
-      return BigDecimal(0) if additional <= 0
-
-      before = income_tax(other_income, on: on, parts: parts)
-      after  = income_tax(other_income + additional, on: on, parts: parts)
-      after - before
-    end
-
     private
       def products
         @data["products"] || {}
+      end
+
+      # A composite is a rate the file does not state because it is the sum of
+      # rates it does state. France's PFU is the only one today: 12.8% income
+      # component plus social charges, 30% through 2025 and 31.4% from 2026.
+      # Declaring it as a sum rather than a third number is what stops the
+      # three from drifting apart when one of them is corrected.
+      def composite?(name)
+        composites.key?(name.to_s)
+      end
+
+      def composite(name, on)
+        composites.fetch(name.to_s).sum(BigDecimal(0)) { |part| rate(part, on) }
+      end
+
+      def dated_section?(key)
+        dated_section_names.include?(key.to_s)
       end
 
       def effective(key, on)

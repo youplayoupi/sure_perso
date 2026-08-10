@@ -23,10 +23,10 @@ module Tax
           subject,
           taxable_base: nil,
           tax: nil,
-          basis: "not modelled",
+          basis: msg("base.cannot_be_computed"),
           warnings: [
             @reason,
-            "Gross is reported; the tax is unknown and is excluded from the total."
+            msg("not_modelled.excluded_from_total")
           ],
           modelled: false
         )

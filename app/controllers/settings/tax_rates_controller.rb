@@ -103,13 +103,29 @@ class Settings::TaxRatesController < ApplicationController
     # surfaces it as a form error, and Tax::RateEdit only ever compares. A
     # controller that also had an opinion about what a valid rate is would be
     # the third one, and the third opinion is the one that ends up wrong.
+    # The sections come from the country file, not from a list here. That is
+    # the whole of what makes a second country a YAML file rather than a
+    # patch: `fr.yml` happens to carry social charges and the income part of
+    # the flat tax, and a `be.yml` carrying something else entirely would get
+    # the same form, the same diff and the same storage without this file
+    # learning either country's vocabulary.
+    #
+    # A section the page did not post is left out of the hash rather than
+    # posted as empty. Both currently store nothing -- Tax::RateOverlay merges
+    # and cannot express a deletion, so an emptied section falls back to what
+    # shipped, which is the only reading it could have. But the two are
+    # different statements and the distinction is cheap to keep: someone who
+    # reaches this action with a partial form, a Turbo request that lost a
+    # frame say, has not said anything about the sections it lost, and the hash
+    # should not put words in their mouth.
     def submitted
-      {
-        "social_charges" => dated_rows(:social_charges),
-        "flat_tax_income_component" => dated_rows(:flat_tax_income_component),
-        "income_tax_brackets" => bracket_rows,
-        "products" => product_rows
-      }
+      sections = Tax::RateOverlay.dated_sections(shipped_data)
+
+      sections.each_with_object({}) { |section, out|
+        next unless params.dig(:tax_rates).respond_to?(:key?) && params[:tax_rates].key?(section)
+
+        out[section] = dated_rows(section)
+      }.merge("products" => product_rows)
     end
 
     # Rows arrive keyed by index -- tax_rates[social_charges][2][rate] --
@@ -130,27 +146,6 @@ class Settings::TaxRatesController < ApplicationController
 
         { "effective_from" => row[:effective_from].to_s.strip,
           "rate" => fraction(row[:rate]) }
-      end
-    end
-
-    # A schedule is a date and a list of bands, so this is the one place the
-    # form nests twice. The whole schedule is posted back for every date, not
-    # just the band that moved, because Tax::RateOverlay replaces a dated entry
-    # rather than merging into it -- posting a partial schedule would delete
-    # the bands left out of it.
-    def bracket_rows
-      rows_for(:income_tax_brackets).filter_map do |row|
-        next if row[:effective_from].blank?
-
-        bands = Array(row[:brackets]&.values).filter_map do |band|
-          next if band[:upto].blank? && band[:rate].blank?
-
-          { "upto" => amount(band[:upto]), "rate" => fraction(band[:rate]) }
-        end
-
-        next if bands.empty?
-
-        { "effective_from" => row[:effective_from].to_s.strip, "brackets" => bands }
       end
     end
 

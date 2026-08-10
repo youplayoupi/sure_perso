@@ -50,10 +50,74 @@ class TaxReportsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "assumptions are on the page, because a net without them is meaningless" do
-    get tax_report_path(tmi_mode: "flat", flat_rate: "0.30")
+    get tax_report_path
 
     assert_response :ok
     assert_select "body", text: /Everything is sold on/
+  end
+
+  # The largest assumption on the page used to arrive in the query string and
+  # default to something, which meant nearly every report was computed from a
+  # figure nobody had chosen while looking exactly like one they had. It is now
+  # a stored fact, nil until stated, and the report has to say which of the two
+  # it is showing -- in the assumptions, where a reader is looking for it.
+  test "an undeclared marginal rate is disclosed as a placeholder" do
+    assert_nil Tax::Household.marginal_rate_for(@family),
+               "the fixture household has declared a rate; this test cannot see the undeclared case"
+
+    get tax_report_path
+
+    assert_select "body", text: /That is a placeholder, not your rate/
+
+    # And it says where to fix it. Named by its own wording rather than by the
+    # href alone, because the report links to the Taxes page from more than one
+    # place and only this one is the offer to replace the placeholder.
+    assert_select "a[href=?]", settings_taxes_path,
+                  text: I18n.t("tax_reports.show.assumption_marginal_rate_link")
+  end
+
+  test "a declared rate is named as the household's own and is the rate on the page" do
+    declare_marginal_rate "0.41"
+
+    get tax_report_path
+
+    assert_select "body", text: /marginal rate of 41.0%, which you have set/
+    assert_select "body", text: /That is a placeholder/, count: 0
+  end
+
+  # The disclosure has to follow the fact, not a page load: a household that
+  # sets its rate and comes back must not still be told it is on a placeholder.
+  test "declaring a rate changes what the report computes, not just what it says" do
+    taxable_account
+
+    # A rule taxing the payments in at the household's own rate, so that the
+    # declared figure reaches the arithmetic rather than only the prose. The
+    # shipped securities rule runs on published rates alone and would print the
+    # same total at any marginal rate at all.
+    Tax::CustomRule.where(family: @family).destroy_all
+    Tax::CustomRule.create!(
+      family: @family, account: taxable_account, kind: "composed",
+      params: { "name" => "PER", "terms" => [ { "base" => "full_value", "rate" => "household_rate" } ] }
+    )
+
+    placeholder = tax_totals
+
+    declare_marginal_rate "0.41"
+
+    assert_not_equal placeholder, tax_totals,
+                     "the report ignored the rate the household declared"
+  end
+
+  # The rate multiplies the largest bases the module computes, and it is stored
+  # per family, so a leak would put one household's income tax on another's
+  # portfolio.
+  test "one household's declared rate does not reach another's report" do
+    declare_marginal_rate "0.41"
+
+    other = families(:empty)
+    other.update!(country: "FR", currency: "EUR")
+
+    assert_nil Tax::Household.marginal_rate_for(other)
   end
 
   test "the page speaks one currency, even when the family displays another" do
@@ -77,10 +141,66 @@ class TaxReportsControllerTest < ActionDispatch::IntegrationTest
     assert_response :ok
   end
 
-  test "a nonsense numeric parameter falls back rather than erroring" do
-    get tax_report_path(other_income: "abc", parts: "xyz", horizon: "999")
+  # The projection knobs are still URL parameters, because they are a question
+  # being asked rather than a fact being declared. A question typed into a
+  # query string is a question that can be typed wrong.
+  test "a nonsense projection parameter falls back rather than erroring" do
+    get tax_report_path(expected_return: "abc", inflation: "xyz", horizon: "999")
 
     assert_response :ok
+  end
+
+  # The rate is not one of them any more, and the old parameters must not come
+  # back to life quietly: a report that still honoured `flat_rate=0.05` would
+  # give two households looking at the same portfolio two different answers,
+  # with nothing on either page to say why.
+  test "the retired rate parameters no longer change anything" do
+    declare_marginal_rate "0.41"
+
+    get tax_report_path
+    declared = css_select("main").to_s
+
+    get tax_report_path(tmi_mode: "flat", flat_rate: "0.05", other_income: "90000", parts: "3")
+
+    assert_response :ok
+    assert_equal declared, css_select("main").to_s,
+                 "a query string overrode the rate the household declared"
+  end
+
+  # The audit list is the one place the report contradicts Sure out loud, so
+  # filing a note under the wrong account is worse than not raising it at all:
+  # it sends the reader to check an account that is fine.
+  #
+  # `apply_all` sorts its input before taxing it, while the subject builder
+  # orders by name alone, so the two lists diverge as soon as accountable types
+  # interleave alphabetically. The report used to zip them positionally, which
+  # compared one account's classification against another account's tax. It
+  # went unnoticed because the list is empty for most portfolios -- the pairing
+  # is only wrong where it has something to say.
+  test "an audit note is filed under the account it is about" do
+    declare_marginal_rate "0.30"
+
+    # First by name and last by accountable type, so its subject and its result
+    # sit at opposite ends of the two orderings. Sure calls a Roth IRA tax
+    # exempt; the pinned rule taxes it anyway, which is precisely the
+    # disagreement this list exists to report.
+    exempt = @family.accounts.create!(
+      name: "AAA Exempt", balance: 1000, currency: "EUR",
+      accountable: Investment.new(subtype: "roth_ira")
+    )
+    Tax::CustomRule.create!(
+      family: @family, account: exempt, kind: "composed",
+      params: {
+        "name" => "Taxed anyway",
+        "terms" => [ { "base" => "full_value", "rate" => "household_rate" } ]
+      }
+    )
+
+    get tax_report_path
+
+    assert_response :ok
+    assert_select "li", text: /\AAAA Exempt: Sure classifies this account as tax exempt/,
+                  count: 1
   end
 
   test "it renders nothing and changes nothing" do
@@ -145,6 +265,15 @@ class TaxReportsControllerTest < ActionDispatch::IntegrationTest
   private
     def sign_out
       @user.sessions.each { |session| delete session_path(session) }
+    end
+
+    # Stored as a fraction, the way the column holds it. The percent-to-
+    # fraction conversion is the form's job and is tested where it lives, in
+    # test/controllers/settings/tax_households_controller_test.rb; going
+    # through the form here would make every one of these tests fail when that
+    # conversion breaks, and none of them say anything about it.
+    def declare_marginal_rate(fraction)
+      Tax::Household.create!(family: @family, marginal_rate: BigDecimal(fraction))
     end
 
     # An account the report can actually put a figure against: a rule that

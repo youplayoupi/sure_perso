@@ -48,6 +48,12 @@ module Tax
       # The product list comes from the rate file, so adding a product is a
       # YAML edit. Validating against it stops a typo ("livretA") from silently
       # falling through to the unknown rule weeks later.
+      #
+      # The messages are symbols rather than sentences. This is a record, not
+      # the engine -- it already depends on Rails, so it can use the ordinary
+      # activerecord.errors mechanism instead of the Tax::Message scheme the
+      # engine needs. Both end up in config/locales; only the route differs,
+      # and the route is decided by whether the file can load I18n at all.
       def product_is_known
         return if product.blank?
 
@@ -58,23 +64,23 @@ module Tax
         # never be read -- the earlier version of this validation skipped
         # quietly here, which made "livretA" look like it had been saved fine.
         unless Tax.supported?(country)
-          errors.add(:product, "cannot be set: this module has no tax rules for #{country} yet")
+          errors.add(:product, :unsupported_country, country: country)
           return
         end
 
         rates = Tax.rate_table(country)
         return if rates.product?(product)
 
-        errors.add(
-          :product,
-          "is not a product this module knows about (#{rates.product_names.join(', ')})"
-        )
+        # The list is in the message because the field is a free-text select
+        # backed by a YAML file: "not a product this module knows about" on its
+        # own leaves the reader with no way to find out what is.
+        errors.add(:product, :unknown_product, products: rates.product_names.join(", "))
       end
 
       def opening_date_is_not_in_the_future
         return if opened_on.nil? || opened_on <= Date.current
 
-        errors.add(:opened_on, "is in the future")
+        errors.add(:opened_on, :in_the_future)
       end
   end
 end

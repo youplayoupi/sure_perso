@@ -8,9 +8,9 @@ module Tax
   # people to correct a number they cannot see. What gets *stored* has to be
   # much smaller than that, and the reason is upgrades.
   #
-  # The shipped file is versioned with the module. Next year's image carries
-  # next year's brackets, a rate that changed in a Finance Act, a ceiling that
-  # moved. A family who saved the whole table once would be pinned to the rates
+  # The shipped file is versioned with the module. Next year's image carries a
+  # rate that changed in a Finance Act, a ceiling that moved, a social-charge
+  # rise. A family who saved the whole table once would be pinned to the rates
   # as they stood the day they clicked save, and would go on filing against
   # them for as long as the row survived -- silently, because a stored rate and
   # a shipped rate look identical on screen. Storing only the difference means
@@ -29,6 +29,10 @@ module Tax
   # household that wants a shipped bracket gone has to set it to something,
   # not unset it.
   #
+  # Which sections exist is read off the shipped file rather than listed here,
+  # for the reason given on Tax::RateOverlay.dated_sections: a second country's
+  # file gets this screen for free, and there is no list to forget to update.
+  #
   # Pure Ruby, like the overlay it feeds, because deciding whether 0.186 and
   # "18.60" are the same number is exactly the sort of thing that should be
   # testable without booting Rails.
@@ -45,7 +49,12 @@ module Tax
 
         document = {}
 
-        RateOverlay::DATED_SECTIONS.each do |section|
+        # Driven by the shipped file, not by a list of section names kept
+        # here. A section the file does not have is not a section, so a form
+        # that posted one would be posting something no rate table could read;
+        # dropping it is the same verdict Tax::RateOverlay reaches, arrived at
+        # from the same source.
+        RateOverlay.dated_sections(shipped).each do |section|
           next unless submitted.key?(section)
 
           changed = changed_dated_entries(Array(shipped[section]), Array(submitted[section]))
@@ -88,19 +97,7 @@ module Tax
         # shows it nor posts it back. Comparing whole hashes would find every
         # annotated row different from itself and store the lot.
         def same_entry?(original, submitted)
-          return false unless same_number?(original["rate"], submitted["rate"])
-
-          same_brackets?(original["brackets"], submitted["brackets"])
-        end
-
-        def same_brackets?(original, submitted)
-          return true if original.nil? && submitted.nil?
-          return false if original.nil? || submitted.nil?
-          return false unless original.length == submitted.length
-
-          original.zip(submitted).all? do |a, b|
-            same_number?(a["upto"], b["upto"]) && same_number?(a["rate"], b["rate"])
-          end
+          same_number?(original["rate"], submitted["rate"])
         end
 
         def changed_products(shipped, submitted)

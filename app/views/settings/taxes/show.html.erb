@@ -1,5 +1,40 @@
 <%= content_for :page_title, t(".page_title") %>
 
+<%# ---- The household's own rate ------------------------------------------
+    First on the page, and not because it is the most-used control -- it is
+    set once and then never again. It is first because everything below it is
+    about accounts and products, and this is the one thing here that is about
+    the people. Leaving it to the bottom, or to a screen of its own, would put
+    the report's largest single assumption behind the least likely click.
+
+    One field. The whole apparatus this replaced -- a mode, other income,
+    a number of parts, all passed as URL parameters -- computed a French
+    five-band scale from defaults nobody ever changed, which is to say it
+    taxed every large withdrawal as though it were the household's only
+    income. A rate read off last year's assessment is less machinery and
+    better arithmetic. %>
+<%= settings_section title: t(".household_title"), subtitle: t(".household_subtitle") do %>
+  <div class="@container space-y-3">
+    <%= styled_form_with url: settings_taxes_household_path,
+                         method: :patch,
+                         scope: :tax_household,
+                         class: "space-y-3" do |f| %>
+      <div class="grid gap-3 @xl:grid-cols-[minmax(0,12rem)_auto] items-end">
+        <%= f.text_field :marginal_rate,
+                         value: tax_percent_field(@household.marginal_rate),
+                         label: t(".household_rate_label"),
+                         placeholder: "30",
+                         inputmode: "decimal" %>
+        <%= f.submit t(".household_save") %>
+      </div>
+    <% end %>
+
+    <p class="text-xs text-subdued max-w-prose">
+      <%= @household.declared? ? t(".household_declared") : t(".household_undeclared") %>
+    </p>
+  </div>
+<% end %>
+
 <%= settings_section title: t(".rules_title"), subtitle: t(".rules_subtitle", country: @country) do %>
   <%# @container so each product row decides for itself whether the label and
       its rule selector fit side by side. The settings column is one width on

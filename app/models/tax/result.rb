@@ -12,16 +12,23 @@ module Tax
                 :gross, :taxable_base, :tax, :basis, :currency
     attr_reader :warnings
 
-    # Income this account pushes onto the progressive scale in the liquidation
-    # year. A second account liquidated the same year stacks on top of it
-    # rather than starting again from zero.
-    attr_reader :bareme_income
+    # How much of this account's taxable base was taxed at the household's own
+    # declared marginal rate, as opposed to at a rate the country publishes.
+    #
+    # It used to exist so that two wrappers liquidated in the same year could
+    # be stacked and run through the income-tax scale once. That is gone: a
+    # single marginal rate distributes over a sum, so stacking changed nothing
+    # and pretending otherwise was machinery with no effect. What is left is
+    # disclosure. The report totals this to say how much of the bill rests on
+    # a number the household typed rather than on one Sure looked up, which is
+    # the difference the rest of the module exists to keep visible.
+    attr_reader :household_rate_income
 
     def initialize(
       account_id: nil, account_name:, accountable_type: nil, subtype: nil,
       product: nil, currency: nil,
       gross:, taxable_base: nil, tax: nil, basis: "", warnings: [],
-      modelled: nil, bareme_income: BigDecimal(0)
+      modelled: nil, household_rate_income: BigDecimal(0)
     )
       @account_id = account_id
       @account_name = account_name
@@ -35,7 +42,7 @@ module Tax
       @basis = basis
       @warnings = Array(warnings)
       @modelled = modelled.nil? ? !tax.nil? : modelled
-      @bareme_income = bareme_income || BigDecimal(0)
+      @household_rate_income = household_rate_income || BigDecimal(0)
     end
 
     # True when a rule produced a number we are willing to stand behind.

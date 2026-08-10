@@ -6,44 +6,44 @@ module Tax
       # A retirement wrapper taken as a lump sum, where the money splits into
       # two streams taxed under different regimes and never mixed:
       #
-      #   payments in that were deducted on the way in  -> progressive scale,
+      #   payments in that were deducted on the way in  -> household rate,
       #                                                    no social charges
       #   payments in that were not deducted            -> not taxed again
-      #   growth (value minus payments in)              -> flat tax
+      #   growth (value minus payments in)              -> flat tax (PFU)
       #
-      # This is the shape of a French PER. Sure has no PER subtype today, so
-      # nothing registers this rule by default -- it is reachable as a custom
-      # rule, and it will be picked up automatically for any subtype whose name
-      # a future Sure release adds and which an operator maps to it.
+      # This is the shape of a French PER taken en capital, and it is the
+      # reason the formula vocabulary has more than one term. Sure has no PER
+      # subtype today: an ordinary taxable brokerage account and a PER are the
+      # same (Investment, brokerage) pair as far as Sure is concerned, so no
+      # rule keyed on the subtype could tell them apart, and nothing registers
+      # this one by default. It is reached by pinning it to the account on the
+      # Taxes screen, and it will be picked up automatically for any subtype a
+      # future Sure release adds and an operator maps to it.
       #
-      # The deducted stream is what makes stacking matter: two wrappers
-      # liquidated in the same year are added together and run through the
-      # brackets once, not taxed twice from zero.
+      # CapitalAndGainsAtHouseholdRate is the same rule with the growth taxed
+      # at the household rate instead. Both are shipped because both are real: the PFU is what applies unless you
+      # ask otherwise, and asking otherwise is worth doing at a low marginal
+      # rate. Choosing between them is a decision about the household's own
+      # circumstances, so the module offers both and picks neither.
       class CapitalAndGains < Base
         rule_id "fr_capital_and_gains"
-        label "Lump sum: scale on the capital, flat tax on the growth"
+        label "Lump sum: your rate on the capital, flat tax on the growth"
 
-        # The two-stream shape, and the reason the formula vocabulary needs
-        # more than one term at all. The deducted payments go to the
-        # progressive scale and stack with anything else liquidated the same
-        # year; the growth takes the flat tax on its own. Payments that were
-        # never deducted appear in neither term, which is the arithmetic saying
-        # they come back untaxed.
+        # The deducted payments go to the household's own marginal rate; the
+        # growth takes the flat tax. Payments that were never deducted appear
+        # in neither term, which is the arithmetic saying they come back
+        # untaxed rather than a gap where a term should be.
         formula terms: [
-          { base: "paid_in_deducted",  rate: "progressive" },
+          { base: "paid_in_deducted",  rate: "household_rate" },
           { base: "gain_over_paid_in", rate: "flat_tax" }
-        ], notes: [
-          "Assumes the whole wrapper is taken as a lump sum in one tax year. " \
-          "Spreading withdrawals lowers the bill and is not modelled."
-        ]
+        ], notes: [ Message.new("fr_capital_and_gains.whole_wrapper_lump_sum") ]
 
         def call(subject, on:, rates:, assumptions:)
           if subject.paid_in.nil?
             return refuse(
               subject,
-              reason: "This wrapper splits into payments in and growth, taxed under " \
-                      "different regimes. Sure does not store the amount paid in.",
-              needs: "the total paid in",
+              reason: msg("fr_capital_and_gains.no_paid_in"),
+              needs: msg("facts.paid_in"),
               extra_warnings: cost_basis_footnote(subject)
             )
           end
@@ -54,39 +54,41 @@ module Tax
 
           if deducted.nil?
             deducted = paid_in
-            warnings << "The deducted portion is not declared, so all payments in are " \
-                        "assumed to have been deducted. That is the higher-tax " \
-                        "assumption. Declare it if some payments were made without " \
-                        "taking the deduction."
+            warnings << msg("fr_capital_and_gains.no_deducted")
           elsif deducted > paid_in
-            warnings << "The declared deducted portion (#{deducted.to_s('F')}) exceeds " \
-                        "the total paid in (#{paid_in.to_s('F')}). Capped at the total; " \
-                        "one of the two figures is wrong."
+            warnings << msg("fr_capital_and_gains.deducted_exceeds_total",
+                            deducted: amount(deducted),
+                            paid_in: amount(paid_in))
             deducted = paid_in
           end
 
           gains        = subject.gain_against(paid_in)
           non_deducted = paid_in - deducted
-          pfu          = rates.flat_tax(on)
+          household    = assumptions.marginal_rate
+          growth_rate  = gains_rate(rates: rates, on: on, assumptions: assumptions)
 
-          capital_tax = assumptions.income_tax_on(deducted, rates: rates, on: on)
-          gains_tax   = gains * pfu
+          capital_tax = deducted * household
+          gains_tax   = gains * growth_rate
 
-          if assumptions.flat?
-            warnings << format(
-              "The capital is taxed at a flat %d%%. A lump sum of %s would in reality " \
-              "push through brackets; switch to the progressive scale for the figure " \
-              "that actually applies.", (assumptions.flat_rate * 100).to_i, deducted.to_s("F")
-            )
-          end
+          # The lump-sum caveat, stated with the number it applies to rather
+          # than in the abstract. A single rate on the whole capital is exact
+          # while the withdrawal stays inside one band and understates the bill
+          # once it climbs out of it, and the amount is the only thing that
+          # tells the reader which of those they are looking at.
+          warnings << msg("fr_capital_and_gains.lump_sum_caveat",
+                          rate: percent(household),
+                          amount: amount(deducted))
+
+          warnings << assumptions.marginal_rate_caveat if assumptions.marginal_rate_caveat
 
           if non_deducted.positive?
-            warnings << "#{non_deducted.to_s('F')} of non-deducted payments in comes " \
-                        "back untaxed."
+            warnings << msg("fr_capital_and_gains.non_deducted_untaxed",
+                            amount: amount(non_deducted))
           end
 
-          warnings << "Assumes the whole wrapper is taken as a lump sum in a single tax " \
-                      "year. Spreading withdrawals lowers the bill and is not modelled."
+          warnings << msg("fr_capital_and_gains.whole_wrapper_lump_sum")
+
+          warnings.concat(regime_notes)
 
           total = capital_tax + gains_tax
 
@@ -94,18 +96,44 @@ module Tax
             subject,
             taxable_base: deducted + gains,
             tax: cents(total),
-            basis: format(
-              "progressive scale on %s of deducted payments in (%s) plus flat tax %.1f%% " \
-              "on %s of growth (%s)",
-              deducted.to_s("F"), cents(capital_tax).to_s("F"),
-              pfu * 100, gains.to_s("F"), cents(gains_tax).to_s("F")
-            ),
+            basis: msg("fr_capital_and_gains.basis",
+                       rate: percent(household),
+                       amount: amount(deducted),
+                       capital_tax: amount(cents(capital_tax)),
+                       gains_rate: gains_basis(growth_rate),
+                       gains: amount(gains),
+                       gains_tax: amount(cents(gains_tax))),
             warnings: warnings,
-            # Only the deducted stream lands on the progressive scale, so only
-            # it stacks onto anything liquidated later the same year.
-            bareme_income: assumptions.bareme? ? deducted : zero
+            household_rate_income: household_rate_income(deducted, gains)
           )
         end
+
+        private
+          # What the growth is taxed at. The one thing the two rules disagree
+          # about, kept as a method rather than a constant so that everything
+          # else -- the deduction split, the caps, the caveats -- is shared
+          # code and cannot drift between them.
+          def gains_rate(rates:, on:, assumptions:)
+            rates.flat_tax(on)
+          end
+
+          def gains_basis(rate)
+            "flat tax #{percent(rate)}"
+          end
+
+          # Only the deducted stream rests on the household's own figure here.
+          def household_rate_income(deducted, _gains)
+            deducted
+          end
+
+          # Anything the *choice between the two rules* obliges the reader to
+          # know, as opposed to anything about this account. Empty here: taking
+          # the flat tax on the growth is what happens if the household does
+          # nothing, and a warning on the default would be a warning on almost
+          # every PER in the report, which is how readers learn to skip them.
+          def regime_notes
+            []
+          end
       end
     end
   end

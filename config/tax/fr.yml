@@ -10,6 +10,26 @@
 #
 # A self-hoster who needs to correct a rate edits this file and restarts. That
 # is the whole point of keeping it out of the code.
+#
+# LANGUAGE. Every string a reader sees from this file -- `label`, `note` -- is
+# written in the language of the country the file is for, and is not passed
+# through a translation table. That is not an oversight, and it is the one
+# place in this module where a sentence is allowed to be untranslated.
+#
+# The engine's own prose goes the other way: it names its sentences (see
+# Tax::Message) so that config/locales can carry a French copy of each one. It
+# can do that because the engine ships a fixed, enumerable list of sentences.
+# A rate file does not. A self-hoster correcting a rate writes their own note
+# about why, in their own words, and a translation key for it could only ever
+# be filled in by them. The same is true of Tax::Rules::Composed carrying the
+# name a family typed for their own rule, which TaxReportsHelper#tax_message
+# also passes through untouched.
+#
+# So `Compte-titres ordinaire` stays as it is rather than becoming
+# `products.cto.label`, and the notes below are in French for the same reason
+# the labels beside them always were. A file added for another country states
+# its own rates in its own language, which is the language of the households
+# that will read it.
 
 country: FR
 currency: EUR
@@ -21,10 +41,10 @@ currency: EUR
 social_charges:
   - effective_from: 2018-01-01
     rate: 0.172
-    note: "CSG 9.2 + CRDS 0.5 + prelevement de solidarite 7.5"
+    note: "CSG 9,2 + CRDS 0,5 + prélèvement de solidarité 7,5"
   - effective_from: 2026-01-01
     rate: 0.186
-    note: "LFSS 2026: CSG raised 9.2 -> 10.6"
+    note: "LFSS 2026 : CSG portée de 9,2 à 10,6"
 
 # ---------------------------------------------------------------------------
 # Prelevement forfaitaire unique (PFU / "flat tax") -- income tax part only.
@@ -37,26 +57,30 @@ flat_tax_income_component:
     rate: 0.128
 
 # ---------------------------------------------------------------------------
-# Bareme de l'impot sur le revenu, per part of quotient familial.
-# `upto: null` marks the final open-ended bracket.
+# Rates this file does not state because they are the sum of rates it does.
+#
+# The PFU is the only one today. Storing 0.30 beside its two components is how
+# a corrected social-charge rate ends up applied in one place and not the
+# other; summing on the way out means there is only ever one number to correct.
+#
+# The names on the left are usable in a formula term exactly like a section
+# name, so a household writing its own rule picks "flat_tax" from the same menu
+# as "social_charges" and does not need to know which of the two the file
+# happens to store directly.
 # ---------------------------------------------------------------------------
-income_tax_brackets:
-  - effective_from: 2025-01-01
-    note: "revenus 2024"
-    brackets:
-      - { upto: 11497, rate: 0.00 }
-      - { upto: 28797, rate: 0.11 }
-      - { upto: 82341, rate: 0.30 }
-      - { upto: 177106, rate: 0.41 }
-      - { upto: null, rate: 0.45 }
-  - effective_from: 2026-01-01
-    note: "revenus 2025, confirmed against service-public.gouv.fr"
-    brackets:
-      - { upto: 11600, rate: 0.00 }
-      - { upto: 29579, rate: 0.11 }
-      - { upto: 84577, rate: 0.30 }
-      - { upto: 181917, rate: 0.41 }
-      - { upto: null, rate: 0.45 }
+composites:
+  flat_tax: [ flat_tax_income_component, social_charges ]
+
+# The income-tax scale used to live here: five bands, two vintages, and a
+# quotient familial. It was removed deliberately. Running it needed the
+# household's other taxable income and its number of parts, neither of which
+# Sure knows, so both were asked for on a form and both were routinely left at
+# their defaults of zero and one -- which produces a bill for a large
+# withdrawal that is wrong by a wide margin and presented with the same
+# confidence as the rates above. What replaced it is a single marginal rate the
+# household sets once, under Taxes. That is a number they can read off last
+# year's assessment, and it is a question with an answer in more countries than
+# just this one.
 
 # ---------------------------------------------------------------------------
 # Product parameters.
@@ -84,7 +108,7 @@ products:
   cto:
     label: "Compte-titres ordinaire"
   per:
-    label: "Plan d'epargne retraite"
+    label: "Plan d'épargne retraite"
   livret_a:
     label: "Livret A"
     ceiling: 22950
@@ -92,7 +116,7 @@ products:
     label: "LDDS"
     ceiling: 12000
   lep:
-    label: "Livret d'epargne populaire"
+    label: "Livret d'épargne populaire"
     ceiling: 10000
   livret_jeune:
     label: "Livret Jeune"
@@ -109,22 +133,25 @@ unmodelled:
   - id: taux_historiques
     applies_to: [pea, pea_pme, pea_jeune]
     note: >
-      PEAs opened between 2013 and 2017 may have part of their gain taxed at the
-      social-charge rates in force when it accrued rather than at today's rate.
-      Not modelled; the engine warns when opened_on falls in range.
+      Pour un PEA ouvert entre 2013 et 2017, une partie du gain peut être
+      soumise aux taux de prélèvements sociaux en vigueur au moment où elle a
+      été acquise, et non au taux actuel. Non modélisé ; le moteur émet un
+      avertissement lorsque la date d'ouverture tombe dans cette période.
   - id: per_exit_annuity
     applies_to: [per]
     note: >
-      Only the lump-sum exit (sortie en capital) is modelled. Annuity exit is a
-      different regime entirely.
+      Seule la sortie en capital est modélisée. La sortie en rente relève d'un
+      régime entièrement différent.
   - id: bareme_option_on_securities
     applies_to: [cto]
     note: >
-      The engine assumes the PFU. Electing the bareme can beat it at low income
-      and is not modelled.
+      Le moteur retient le PFU. L'option pour le barème peut être plus
+      favorable à faible revenu ; elle n'est pas modélisée.
   - id: abattement_pre_2018
     applies_to: [cto]
-    note: "Abattements for shares acquired before 2018 are not modelled."
+    note: "Les abattements pour titres acquis avant 2018 ne sont pas modélisés."
   - id: loss_carry_forward
     applies_to: [cto, pea, pea_pme, pea_jeune]
-    note: "Realised losses offset gains for 10 years. Not modelled."
+    note: >
+      Les moins-values réalisées s'imputent sur les plus-values pendant 10 ans.
+      Non modélisé.

@@ -88,15 +88,21 @@ module TaxRatesHelper
     table.product(name)[key.to_s]
   end
 
-  # The headline flat tax -- the income part plus social charges -- or nil.
+  # A composite rate -- one the country file declares as the sum of others --
+  # in the units the page shows, or nil.
   #
-  # Derived rather than stored, so that the two halves cannot drift apart, and
-  # therefore uncomputable exactly when one of them is unreadable. That is the
-  # error path of this very form, so it degrades to nil and the sentence
-  # quoting it is dropped, rather than taking down the page that exists to fix
-  # the problem.
-  def tax_headline_flat_tax(table, on: Date.current)
-    tax_percent_field(table.flat_tax(on))
+  # Named generically rather than after France's flat tax because the country
+  # file decides which composites exist and what they are called. This used to
+  # be `tax_headline_flat_tax`, which meant the rates screen could not render a
+  # second country's headline figure without learning its name.
+  #
+  # Derived rather than stored, so the parts cannot drift from the total, and
+  # therefore uncomputable exactly when one of the parts is unreadable. That is
+  # the error path of this very form, so it degrades to nil and the caller
+  # drops the line, rather than taking down the page that exists to fix the
+  # problem.
+  def tax_composite_percent(table, name, on: Date.current)
+    tax_percent_field(table.rate(name, on))
   rescue Tax::Error, ArgumentError, TypeError
     nil
   end

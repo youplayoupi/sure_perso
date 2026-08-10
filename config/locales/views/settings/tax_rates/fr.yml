@@ -10,22 +10,26 @@ fr:
       none: non renseigné
       effective_from: En vigueur à partir du
       rate_percent: Taux, en pourcentage
-      upto: Revenu jusqu'à
-      upto_open: laisser vide pour la dernière tranche
       maturity_years: Maturité, en années
       ceiling: Plafond de versements
       shipped_was: "Ce module livre %{value}"
-      shipped_band_was: "Ce module livre %{upto} à %{rate}"
       add_rate: Ajouter un taux daté
-      add_band: Ajouter une tranche
-      add_schedule: Ajouter une année
       remove_row: Retirer cette ligne
-      remove_schedule: Retirer cette année
       sections:
         social_charges: Prélèvements sociaux
         flat_tax_income_component: Flat tax, part impôt sur le revenu
-        income_tax_brackets: Barème de l'impôt sur le revenu
+        flat_tax: Flat tax (PFU)
         products: Produits
+      hints:
+        social_charges: >-
+          Prélèvements sociaux sur les revenus du capital. Appliqués par
+          presque toutes les règles du module : une correction ici déplace
+          l'essentiel du rapport.
+        flat_tax_income_component: >-
+          Uniquement la part impôt sur le revenu du PFU. Le taux global de la
+          flat tax est celui-ci plus les prélèvements sociaux ; il est affiché
+          plus bas plutôt que saisi ici, le module additionnant les deux pour
+          qu'ils ne puissent pas diverger.
       show:
         page_title: Taux d'imposition
         rates_title: Taux
@@ -35,25 +39,15 @@ fr:
           en vigueur, car un taux est lu à la date d'établissement du rapport :
           corriger aujourd'hui le taux de l'an prochain laisse le rapport de
           l'an dernier se reproduire à l'identique.
-        social_charges_hint: >-
-          Prélèvements sociaux sur les revenus du capital. Appliqués par
-          presque toutes les règles du module : une correction ici déplace
-          l'essentiel du rapport.
-        flat_tax_hint: >-
-          Uniquement la part impôt sur le revenu du PFU. Le taux global de la
-          flat tax est celui-ci plus les prélèvements sociaux — d'où l'absence
-          de champ dédié : le module additionne les deux pour qu'ils ne
-          puissent pas diverger.
-        flat_tax_headline: >-
-          Il s'établit actuellement à %{headline} %.
-        brackets_title: Barème de l'impôt sur le revenu
-        brackets_subtitle: >-
-          Le barème, par part de quotient familial. Utilisé partout où une
-          règle envoie quelque chose au barème progressif plutôt qu'au PFU —
-          le plus souvent les versements déduits sortant d'un PER. Le seuil de
-          la dernière tranche est volontairement vide : c'est ce qui la rend
-          ouverte, et sans lui les revenus les plus élevés sortiraient du
-          calcul sans être imposés.
+        composites_title: Taux composés d'autres taux
+        composites_subtitle: >-
+          Chiffres que le fichier du pays déclare comme la somme des taux
+          ci-dessus, affichés ici parce que ce sont ceux que l'on se cite entre
+          soi. Ils ne se saisissent pas directement : un champ ici serait un
+          second endroit où modifier le même nombre, et les deux divergeraient
+          dès la première utilisation. Corrigez une part ci-dessus et le total
+          suit.
+        composite_parts: "Somme de %{parts}"
         products_title: Paramètres des produits
         products_subtitle: >-
           Ce que les règles doivent savoir de chaque enveloppe. La maturité est
@@ -77,8 +71,8 @@ fr:
         about_upgrades: >-
           Seul ce que vous modifiez est enregistré. Un chiffre que vous laissez
           tel quel continue de suivre le fichier livré avec ce module : une
-          version future portant un nouveau taux ou un nouveau barème vous le
-          donnera automatiquement. Un chiffre que vous corrigez devient le
+          version future portant un nouveau taux vous le donnera
+          automatiquement. Un chiffre que vous corrigez devient le
           vôtre et le reste au fil des mises à jour — c'est bien l'objectif,
           mais cela signifie qu'une section corrigée une fois ne se mettra plus
           à jour d'elle-même.

@@ -27,10 +27,7 @@ module Tax
         # wording -- telling the reader which of two different zeroes they are
         # looking at.
         formula terms: [],
-                notes: [
-                  "Interest on a taxable livret is taxed as it arises. That tax is real " \
-                  "and already paid; it is outside a report about liquidating today."
-                ]
+                notes: [ Message.new("fr_deposit.note_interest_taxed_as_it_arises") ]
 
         # Products whose interest is exempt from both income tax and social
         # charges, not merely untaxed on withdrawal.
@@ -44,31 +41,25 @@ module Tax
               subject,
               taxable_base: zero,
               tax: zero,
-              basis: "exempt from income tax and social charges",
+              basis: msg("exempt.basis"),
               warnings: ceiling_note(subject, rates)
             )
           end
 
           warnings = []
           warnings << if product == "taxable_savings"
-            "Interest on this account is taxable as it arises, at the flat tax or on " \
-            "the progressive scale. That tax is not shown here: this report covers " \
-            "liquidation only, and withdrawing a cash balance is not itself taxed."
+            msg("fr_deposit.taxable_savings")
           elsif subject.subtype == "checking"
-            "A current account balance is untaxed on withdrawal. Any interest it pays " \
-            "is taxed as it arises and is outside this report."
+            msg("fr_deposit.checking")
           else
-            "Withdrawing a cash balance is not a taxable event, so the liquidation tax " \
-            "is zero. If this is a taxable livret rather than a Livret A or LDDS, its " \
-            "interest is taxed as it arises and is not shown here. Declare the product " \
-            "on this account to remove the ambiguity."
+            msg("fr_deposit.unknown_product")
           end
 
           result(
             subject,
             taxable_base: zero,
             tax: zero,
-            basis: "no tax on liquidating a cash balance",
+            basis: msg("fr_deposit.basis_cash"),
             warnings: warnings + ceiling_note(subject, rates)
           )
         end
@@ -81,9 +72,7 @@ module Tax
             return [] if ceiling.nil? || subject.value.nil? || subject.value <= ceiling
 
             [
-              "Balance exceeds the #{ceiling.to_i} deposit ceiling. Interest capitalises " \
-              "above the ceiling quite legally, but a balance well above it may mean the " \
-              "product is misidentified."
+              msg("fr_deposit.exceeds_ceiling", ceiling: ceiling.to_i)
             ]
           end
       end

@@ -19,14 +19,22 @@ module Tax
     ON = Date.new(2026, 8, 8)
     RATES = Tax::RateTable.load_file(TaxEngineTestHelper.rate_file)
 
+    # A household that has stated 30%. Named for the number rather than for
+    # the mechanism, because the mechanism is now the only one there is: the
+    # module asks for a marginal rate and multiplies by it.
     def flat30
-      Tax::Assumptions.new(tmi_mode: :flat, flat_rate: d("0.30"))
+      Tax::Assumptions.new(marginal_rate: d("0.30"))
     end
 
-    def bareme(other: 0, parts: 1)
-      Tax::Assumptions.new(
-        tmi_mode: :bareme, other_taxable_income: d(other), parts: d(parts)
-      )
+    def at_rate(rate)
+      Tax::Assumptions.new(marginal_rate: d(rate))
+    end
+
+    # A household that has not said. Distinct from `flat30` even though the
+    # placeholder happens to be 30% today, because what is being tested is that
+    # the report says so rather than what the figure is.
+    def undeclared
+      Tax::Assumptions.new(marginal_rate: nil)
     end
 
     def d(value)
@@ -50,8 +58,75 @@ module Tax
       registry.apply(subj, on: on, rates: RATES, assumptions: assumptions || flat30)
     end
 
+    # Warnings are Tax::Message objects now, not strings: the engine names its
+    # sentences so they can be translated and renders the English only when
+    # asked. Asserting on the rendered English is still the right test -- it is
+    # what the crosscheck script prints and what a reader with no translation
+    # gets -- so this is where the rendering happens.
     def warned?(result, fragment)
-      result.warnings.any? { |w| w.include?(fragment) }
+      result.warnings.any? { |w| w.to_s.include?(fragment) }
+    end
+  end
+
+  # -------------------------------------------------------------------------
+
+  # The household's own rate, and what the module does when it does not have
+  # one. This is the hinge the whole rewrite turns on: the module may not
+  # refuse to draw the report (a blank page helps nobody), and it may not
+  # present a guess with the same confidence as a figure off the rate file.
+  # The resolution is that it computes and announces.
+  class AssumptionsTest < EngineTestCase
+    def test_a_declared_rate_is_used_and_known_to_be_declared
+      a = Tax::Assumptions.new(marginal_rate: d("0.41"))
+
+      assert_equal d("0.41"), a.marginal_rate
+      assert a.marginal_rate_declared?
+      assert_nil a.marginal_rate_caveat
+    end
+
+    def test_an_undeclared_rate_falls_back_and_says_so
+      a = Tax::Assumptions.new(marginal_rate: nil)
+
+      assert_equal Tax::Assumptions::PLACEHOLDER_MARGINAL_RATE, a.marginal_rate
+      refute a.marginal_rate_declared?
+      assert_includes a.marginal_rate_caveat.to_s, "30%"
+    end
+
+    # Zero is a rate. A household below the first taxable band has genuinely
+    # declared 0%, and treating that as "nothing said" would silently tax them
+    # at the placeholder -- the one direction of error the module must not make
+    # quietly, since it produces a bill out of nowhere.
+    def test_zero_is_a_declaration_not_an_absence
+      a = Tax::Assumptions.new(marginal_rate: d(0))
+
+      assert a.marginal_rate_declared?
+      assert_equal d(0), a.marginal_rate
+      assert_equal d(0), a.income_tax_on(d(50_000))
+    end
+
+    # Discarded rather than clamped. A stored 1.5 is a row somebody wrote by
+    # hand or a bug, and clamping it to 100% would compute a confident,
+    # enormous, wrong answer -- while falling back to the placeholder computes
+    # a plausible one that announces itself as a guess.
+    def test_a_rate_outside_zero_to_one_is_discarded
+      refute Tax::Assumptions.new(marginal_rate: d("1.5")).marginal_rate_declared?
+      refute Tax::Assumptions.new(marginal_rate: d("-0.1")).marginal_rate_declared?
+      refute Tax::Assumptions.new(marginal_rate: "not a number").marginal_rate_declared?
+    end
+
+    def test_with_carries_the_rate_through
+      a = Tax::Assumptions.new(marginal_rate: d("0.41")).with(horizon_years: 30)
+
+      assert_equal d("0.41"), a.marginal_rate
+      assert a.marginal_rate_declared?
+      assert_equal 30, a.horizon_years
+    end
+
+    def test_income_tax_on_a_loss_or_nothing_is_zero
+      a = Tax::Assumptions.new(marginal_rate: d("0.30"))
+
+      assert_equal d(0), a.income_tax_on(nil)
+      assert_equal d(0), a.income_tax_on(d(-100))
     end
   end
 
@@ -72,28 +147,45 @@ module Tax
       assert_raises(Tax::RateError) { RATES.social_charges(Date.new(2001, 1, 1)) }
     end
 
-    def test_first_bracket_is_free
-      assert_equal d(0), RATES.income_tax(d(11_000), on: ON)
+    # The generic lookup, which is what makes a second country a YAML file.
+    # Nothing in RateTable knows the string "social_charges"; it knows that a
+    # section of dated entries can be asked for its rate on a date.
+    def test_a_rate_is_looked_up_by_the_name_the_file_gives_it
+      assert_equal RATES.social_charges(ON), RATES.rate("social_charges", ON)
+      assert_equal RATES.flat_tax(ON), RATES.rate("flat_tax", ON)
     end
 
-    def test_progressive_tax_matches_a_hand_computation
-      # 2026 brackets: 11 600 @ 0, up to 29 579 @ 11%, up to 84 577 @ 30%.
-      # 50 000 -> (29579-11600)*0.11 + (50000-29579)*0.30
-      expected = (d(29_579) - d(11_600)) * d("0.11") + (d(50_000) - d(29_579)) * d("0.30")
-      assert_equal expected, RATES.income_tax(d(50_000), on: ON)
+    def test_a_composite_is_the_sum_of_its_declared_parts
+      assert_equal(
+        RATES.rate("flat_tax_income_component", ON) + RATES.rate("social_charges", ON),
+        RATES.rate("flat_tax", ON)
+      )
     end
 
-    def test_quotient_familial_splits_then_multiplies_back
-      single = RATES.income_tax(d(60_000), on: ON, parts: d(1))
-      couple = RATES.income_tax(d(60_000), on: ON, parts: d(2))
-      assert_operator couple, :<, single
-      assert_equal RATES.income_tax(d(30_000), on: ON) * 2, couple
+    # The question the rule builder and the presenter both ask before they
+    # offer or resolve a rate. It has to be true for composites too, or the
+    # headline flat tax would be missing from the menu that offers rates.
+    def test_rate_names_covers_both_dated_sections_and_composites
+      assert_includes RATES.rate_names, "social_charges"
+      assert_includes RATES.rate_names, "flat_tax_income_component"
+      assert_includes RATES.rate_names, "flat_tax"
+
+      RATES.rate_names.each { |name| assert RATES.rate?(name), "#{name} not recognised" }
     end
 
-    def test_marginal_tax_is_the_difference_not_a_rate
-      stacked = RATES.marginal_income_tax(d(20_000), other_income: d(40_000), on: ON)
-      alone   = RATES.income_tax(d(20_000), on: ON)
-      assert_operator stacked, :>, alone
+    def test_an_unknown_rate_is_not_recognised
+      refute RATES.rate?("wealth_tax")
+    end
+
+    # The brackets went, and with them the household's other income and its
+    # number of parts. This asserts the absence rather than leaving it to be
+    # noticed: a rate file that grew an `income_tax_brackets` section again
+    # would be reintroducing a calculation the module deliberately dropped
+    # because it could only be fed by defaults nobody set.
+    def test_the_income_tax_scale_is_gone
+      refute_respond_to RATES, :income_tax
+      refute_respond_to RATES, :brackets
+      refute_includes RATES.rate_names, "income_tax_brackets"
     end
 
     def test_ceilings_are_read_from_data
@@ -222,7 +314,7 @@ module Tax
       line = apply(livret(product: "livret_a"))
       assert_equal d(0), line.tax
       assert line.modelled?
-      assert_includes line.basis, "exempt"
+      assert_includes line.basis.to_s, "exempt"
     end
 
     def test_undeclared_savings_is_still_zero_on_liquidation_but_flags_the_ambiguity
@@ -287,13 +379,12 @@ module Tax
       assert warned?(line, "Capped at the total")
     end
 
-    def test_progressive_beats_flat_at_low_other_income
-      assert_operator run_rule(per, assumptions: bareme).tax, :<, run_rule(per).tax
-    end
+    def test_a_lower_household_rate_lowers_the_capital_half_only
+      cheap = run_rule(per, assumptions: at_rate("0.11"))
 
-    def test_progressive_exceeds_flat_at_high_other_income
-      high = bareme(other: 100_000)
-      assert_operator run_rule(per, assumptions: high).tax, :>, run_rule(per).tax
+      # The growth is on the flat tax in this rule, so only the 50 000 of
+      # deducted capital moves: 50000 * (0.30 - 0.11).
+      assert_equal d(50_000) * (d("0.30") - d("0.11")), run_rule(per).tax - cheap.tax
     end
 
     def test_missing_paid_in_refuses
@@ -302,9 +393,81 @@ module Tax
       refute line.modelled?
     end
 
-    def test_only_the_deducted_stream_stacks
-      assert_equal d("50000.00"), run_rule(per, assumptions: bareme).bareme_income
-      assert_equal d(0), run_rule(per).bareme_income, "flat mode must not stack"
+    # What the report totals to say how much of the bill rests on a number the
+    # household typed rather than on the country's rate file. For this rule it
+    # is the deducted capital and nothing else, because the growth goes to the
+    # flat tax.
+    def test_only_the_capital_rests_on_the_household_rate
+      assert_equal d("50000.00"), run_rule(per).household_rate_income
+    end
+
+    def test_an_undeclared_rate_still_computes_but_says_so
+      line = run_rule(per, assumptions: undeclared)
+
+      assert_equal run_rule(per).tax, line.tax, "the placeholder is 30%"
+      assert warned?(line, "No household marginal rate has been set")
+    end
+
+    def test_a_declared_rate_does_not_carry_the_placeholder_warning
+      refute warned?(run_rule(per), "No household marginal rate has been set")
+    end
+  end
+
+  # -------------------------------------------------------------------------
+
+  # The other PER shape: the household elected the progressive scale over the
+  # flat tax, so the growth is taxed at its rate too. Same wrapper, one rate
+  # swapped -- which is the whole reason it is a subclass rather than a second
+  # implementation.
+  class CapitalAndGainsAtHouseholdRateTest < EngineTestCase
+    RULE = Tax::Rules::Fr::CapitalAndGainsAtHouseholdRate.new
+    DEFAULT = Tax::Rules::Fr::CapitalAndGains.new
+
+    def per(**overrides)
+      subject(
+        accountable_type: "Investment", subtype: "per_custom", product: "per",
+        value: d("80000.00"), paid_in: d("50000.00"), **overrides
+      )
+    end
+
+    def run_rule(rule, rate)
+      rule.call(per, on: ON, rates: RATES, assumptions: at_rate(rate))
+    end
+
+    def test_everything_is_taxed_at_the_household_rate
+      # 80 000 of which 50 000 was paid in and deducted: the whole lot at 30%.
+      assert_equal d("24000.00"), run_rule(RULE, "0.30").tax
+    end
+
+    def test_it_beats_the_flat_tax_below_the_flat_tax
+      # The flat tax is 31.4% in 2026, so an 11% household is better off here.
+      assert_operator run_rule(RULE, "0.11").tax, :<, run_rule(DEFAULT, "0.11").tax
+    end
+
+    def test_it_loses_to_the_flat_tax_above_the_flat_tax
+      assert_operator run_rule(RULE, "0.41").tax, :>, run_rule(DEFAULT, "0.41").tax
+    end
+
+    def test_the_two_agree_on_the_capital_half
+      # Whatever the election, the deducted payments go to the household rate.
+      # If these ever disagreed, one of the two rules would be taxing the
+      # capital as though it were growth.
+      assert_equal(
+        d(50_000) * d("0.30"),
+        run_rule(RULE, "0.30").tax - (d(30_000) * d("0.30"))
+      )
+    end
+
+    def test_the_whole_bill_rests_on_the_household_rate
+      assert_equal d("80000.00"), run_rule(RULE, "0.30").household_rate_income
+    end
+
+    # The election covers all of a household's investment income for the year,
+    # so it cannot apply to one account and not another. The module computes
+    # the mixture anyway rather than refusing -- it cannot see the tax return
+    # -- and says so.
+    def test_it_says_the_election_is_all_or_nothing
+      assert warned?(run_rule(RULE, "0.30"), "cannot apply to this account alone")
     end
   end
 
@@ -342,7 +505,18 @@ module Tax
 
   # -------------------------------------------------------------------------
 
-  class StackingTest < EngineTestCase
+  # What replaced the stacking loop.
+  #
+  # The registry used to run the accounts in order, carrying the income each
+  # one sent to the progressive scale forward into the next, so that two PERs
+  # liquidated together crossed bands the way they would in a real tax year.
+  # With a single marginal rate that machinery is not merely unnecessary, it is
+  # arithmetically a no-op -- one rate over a sum is the sum of that rate over
+  # each part -- and it emitted a "stacked on" warning about brackets nobody
+  # was crossing. These tests pin the property that made it removable, so that
+  # anyone reintroducing an order-dependent total has to break one of them
+  # first.
+  class IndependenceTest < EngineTestCase
     def per(name, value, paid_in)
       Tax::Subject.new(
         id: name, name: name, currency: "EUR",
@@ -369,39 +543,42 @@ module Tax
       registry_with_per.apply_all(list, on: ON, rates: RATES, assumptions: assumptions)
     end
 
-    def test_stacked_total_exceeds_the_sum_of_isolated_totals
-      isolated = subjects.sum { |s| registry_with_per.apply(s, on: ON, rates: RATES, assumptions: bareme).tax }
-      stacked  = apply_all(bareme).sum(&:tax)
+    def test_the_total_is_the_sum_of_the_accounts_taken_alone
+      isolated = subjects.sum { |s|
+        registry_with_per.apply(s, on: ON, rates: RATES, assumptions: flat30).tax
+      }
 
-      assert_operator stacked, :>, isolated
-    end
-
-    def test_the_stack_is_flagged_on_the_second_account_only
-      flagged = apply_all(bareme).count { |l| warned?(l, "Stacked on") }
-      assert_equal 1, flagged
+      assert_equal isolated, apply_all(flat30).sum(&:tax)
     end
 
     def test_the_result_does_not_depend_on_input_order
-      forward = apply_all(bareme).map(&:tax)
-      reverse = apply_all(bareme, subjects.reverse).map(&:tax)
+      forward = apply_all(flat30).map { |l| [ l.account_name, l.tax ] }.sort
+      reverse = apply_all(flat30, subjects.reverse).map { |l| [ l.account_name, l.tax ] }.sort
 
       assert_equal forward, reverse
     end
 
-    def test_flat_mode_does_not_stack
-      assert_equal d("24420.00") + d("12210.00"), apply_all(flat30).sum(&:tax)
+    # Nothing carries between accounts any more, so nothing should claim to.
+    # A warning that says one account was affected by another would be false
+    # under this arrangement, and false in a way a reader cannot check.
+    def test_no_account_is_told_it_was_stacked_on_another
+      refute apply_all(flat30).any? { |l| warned?(l, "Stacked on") }
     end
 
-    def test_an_exempt_account_contributes_nothing_to_the_stack
+    def test_an_exempt_account_changes_nothing_about_the_others
       livret = Tax::Subject.new(
         id: "L", name: "Livret A", accountable_type: "Depository",
         subtype: "savings", product: "livret_a", value: d(20_000)
       )
 
-      with    = apply_all(bareme, [ livret ] + subjects).find { |l| l.account_name == "PER 1" }
-      without = apply_all(bareme, subjects).find { |l| l.account_name == "PER 1" }
+      with    = apply_all(flat30, [ livret ] + subjects).find { |l| l.account_name == "PER 1" }
+      without = apply_all(flat30, subjects).find { |l| l.account_name == "PER 1" }
 
       assert_equal without.tax, with.tax
+    end
+
+    def test_two_pers_come_to_the_hand_computed_total
+      assert_equal d("24420.00") + d("12210.00"), apply_all(flat30).sum(&:tax)
     end
   end
 
@@ -457,7 +634,7 @@ module Tax
       Tax::Projection.new(
         registry: registry, rates: RATES,
         assumptions: Tax::Assumptions.new(
-          tmi_mode: :flat, flat_rate: d("0.30"),
+          marginal_rate: d("0.30"),
           expected_return: d(ret), horizon_years: horizon
         )
       )
@@ -506,7 +683,7 @@ module Tax
       subj = subject(tax_treatment: :tax_exempt)
       res  = Tax::Result.new(account_name: "X", gross: d(100), tax: d(10))
 
-      assert_includes Tax::Treatment.audit(subj, res).first, "does not transfer"
+      assert_includes Tax::Treatment.audit(subj, res).first.to_s, "does not transfer"
     end
 
     def test_it_stays_quiet_when_the_two_agree
@@ -520,7 +697,7 @@ module Tax
       subj = subject(tax_treatment: :tax_deferred)
       res  = Tax::Result.new(account_name: "X", gross: d(100), tax: d(10), product: "cto")
 
-      assert_includes Tax::Treatment.audit(subj, res).first, "needs its own rule"
+      assert_includes Tax::Treatment.audit(subj, res).first.to_s, "needs its own rule"
     end
   end
 end

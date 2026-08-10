@@ -31,18 +31,34 @@ module TaxRulesHelper
 
   # The three closed lists a term is assembled from, as select options.
   #
-  # Each is built from the engine's own constant rather than from a list
-  # written out here, so a base or a rate added to Tax::Formula appears in the
-  # form with no view change -- and, more to the point, a form can never offer
-  # a value the validator would then reject.
+  # Built from the engine rather than from a list written out here, so the form
+  # can never offer a value the validator would then reject -- and, the other
+  # way round, so nothing the validator accepts is missing from the menu.
   def tax_base_choices
     Tax::Formula::BASES.keys.map do |base|
       [ t("tax.bases.#{base}", default: Tax::Vocabulary.base(base)), base ]
     end
   end
 
+  # Unlike the bases, the rates are not a constant: they are whatever the
+  # country's file declares, plus the two the engine supplies itself (the
+  # household's own marginal rate, and a rate typed onto the term). That is the
+  # point of the generalisation -- a second country ships a YAML and its rates
+  # appear in this menu without a line changing here.
+  #
+  # `literal` is dropped from the list because the form offers it as a separate
+  # control -- a percentage box -- rather than as an entry in this select;
+  # leaving it in would give two ways to say the same thing, one of which does
+  # nothing until the box beside it is filled.
+  #
+  # Falls back to the built-ins alone when the rate table cannot be loaded,
+  # which is the unsupported-country path. An empty select would be a worse
+  # answer than a short one.
   def tax_rate_choices
-    Tax::Formula::RATES.map do |rate|
+    table = tax_rates_for_current_family
+    names = (table ? table.rate_names : []) + [ Tax::Formula::HOUSEHOLD_RATE ]
+
+    names.uniq.map do |rate|
       [ t("tax.rates.#{rate}", default: Tax::Vocabulary.rate(rate)), rate ]
     end
   end

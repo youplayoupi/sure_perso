@@ -32,7 +32,11 @@ module Tax
       end
 
       def call(subject, on:, rates:, assumptions:)
-        return refuse_invalid(subject) unless formula.valid?
+        # Validated against this country's own rate names, not against a list
+        # kept in Ruby. A term naming a rate France has and Germany does not
+        # is a valid formula in one file and an invalid one in the other, and
+        # the only thing that can tell them apart is the table in hand.
+        return refuse_invalid(subject, rates) unless formula.valid?(known_rates: rates.rate_names)
 
         missing = missing_facts(subject)
         return refuse_missing(subject, missing) if missing.any?
@@ -47,13 +51,21 @@ module Tax
 
         warnings.concat(formula.notes)
 
+        # Said once for the whole rule rather than once per term, and only when
+        # a term actually rests on the declared rate. A rule that is all flat
+        # tax is unaffected by whether the household has set its rate, and
+        # warning about it anyway would train the reader to skip warnings.
+        if formula.uses_household_rate? && assumptions.marginal_rate_caveat
+          warnings << assumptions.marginal_rate_caveat
+        end
+
         result(
           subject,
           taxable_base: run[:base],
           tax: cents(run[:tax]),
           basis: run[:basis],
           warnings: warnings,
-          bareme_income: run[:bareme]
+          household_rate_income: run[:household_rate_income]
         )
       end
 
@@ -68,13 +80,14 @@ module Tax
         end
 
         def refuse_missing(subject, missing)
-          words = missing.map { |f| Vocabulary.fact(f) }
+          words = missing.map { |f| msg("facts.#{f}") }
 
           refuse(
             subject,
-            reason: "This rule taxes #{plain_english_bases}, which needs " \
-                    "#{to_sentence(words)}. That is not recorded for this account.",
-            needs: to_sentence(words),
+            reason: msg("composed.missing_facts",
+                        bases: plain_english_bases,
+                        facts: words),
+            needs: words,
             extra_warnings: missing.include?(:paid_in) ? cost_basis_footnote(subject) : []
           )
         end
@@ -83,17 +96,17 @@ module Tax
         # raised. The row is already stored by the time anyone finds out, and
         # taking down the whole report because one account has a bad rule would
         # hide every figure that is fine.
-        def refuse_invalid(subject)
+        def refuse_invalid(subject, rates)
+          problems = formula.errors(known_rates: rates.rate_names)
+
           result(
             subject,
             taxable_base: nil,
             tax: nil,
-            basis: "cannot be computed",
+            basis: msg("base.cannot_be_computed"),
             modelled: false,
             warnings: [
-              "The custom rule set for this account does not describe a valid " \
-              "calculation: #{to_sentence(formula.errors)}. Nothing is assumed in " \
-              "its place -- fix the rule and this account will compute.",
+              msg("composed.invalid_formula", problems: problems),
               *cost_basis_footnote(subject)
             ]
           )
@@ -109,14 +122,12 @@ module Tax
           if declared.nil?
             return paid_in unless uses_deduction_split?
 
-            warnings << "The deducted portion of the payments in is not declared, so all " \
-                        "of them are assumed to have been deducted. That is the " \
-                        "higher-tax assumption."
+            warnings << msg("composed.no_deducted_portion")
             paid_in
           elsif declared > paid_in
-            warnings << "The declared deducted portion (#{declared.to_s('F')}) is more than " \
-                        "the total paid in (#{paid_in.to_s('F')}). Capped at the total; one " \
-                        "of the two figures is wrong."
+            warnings << msg("composed.deducted_exceeds_total",
+                            declared: amount(declared),
+                            paid_in: amount(paid_in))
             paid_in
           else
             declared
@@ -148,18 +159,18 @@ module Tax
             as_young  = evaluate(subject, mature: false, on: on, rates: rates,
                                  assumptions: assumptions, deducted: deducted)
 
-            warnings << "No opening date is declared, so the #{years}-year clock cannot be " \
-                        "checked. Treated as mature, which gives " \
-                        "#{cents(as_mature[:tax]).to_s('F')}; if it is not, the tax would be " \
-                        "#{cents(as_young[:tax]).to_s('F')}."
+            warnings << msg("composed.no_opening_date",
+                            years: years,
+                            mature_tax: amount(cents(as_mature[:tax])),
+                            young_tax: amount(cents(as_young[:tax])))
             return true
           end
 
           mature = age >= years
           unless mature
-            warnings << "This wrapper is #{age.round(1)} years old, under the #{years} it " \
-                        "needs, so the terms that depend on the clock are taxed at the " \
-                        "pre-maturity rate."
+            warnings << msg("composed.immature",
+                            age: age.round(1),
+                            years: years)
           end
 
           mature
@@ -183,36 +194,48 @@ module Tax
         end
 
         def evaluate(subject, mature:, on:, rates:, assumptions:, deducted:)
-          base_total   = zero
-          tax_total    = zero
-          bareme_total = zero
-          sentences    = []
+          base_total      = zero
+          tax_total       = zero
+          household_total = zero
+          sentences       = []
 
           formula.terms.each do |term|
             next unless fires?(term, mature, subject)
 
-            amount = amount_for(term, subject, deducted)
-            next if amount.nil?
+            taxed = amount_for(term, subject, deducted)
+            next if taxed.nil?
 
-            if term.progressive?
-              due = assumptions.income_tax_on(amount, rates: rates, on: on)
-              bareme_total += amount if assumptions.bareme?
-              sentences << format("progressive scale on %s (%s)", amount.to_s("F"), cents(due).to_s("F"))
+            rate = rate_for(term, rates, on, assumptions)
+            due  = taxed * rate
+
+            # The household rate gets its own key rather than a bare
+            # percentage. The reader has to be able to tell which line of the
+            # calculation is theirs to correct, and "30.0% on 40000" beside
+            # "12.8% on 5000" gives them no way to.
+            sentences << if term.household_rate?
+              household_total += taxed
+              msg("composed.term_household_rate",
+                  rate: percent(rate), amount: amount(taxed), tax: amount(cents(due)))
             else
-              rate = rate_for(term, rates, on)
-              due = amount * rate
-              sentences << format("%.1f%% on %s (%s)", rate * 100, amount.to_s("F"), cents(due).to_s("F"))
+              msg("composed.term",
+                  rate: percent(rate), amount: amount(taxed), tax: amount(cents(due)))
             end
 
-            base_total += amount
+            base_total += taxed
             tax_total  += due
           end
 
           {
             base: base_total,
             tax: tax_total,
-            bareme: bareme_total,
-            basis: sentences.empty? ? "not taxed on liquidation" : sentences.join(" plus ")
+            household_rate_income: household_total,
+            basis: if sentences.empty?
+                     msg("composed.not_taxed_on_liquidation")
+                   else
+                     # "plus", not "and": these are addends, and a reader adding them
+                     # up has to be able to see that they add.
+                     msg("composed.basis", terms: Message::List.new(sentences, connector: "plus"))
+                   end
           }
         end
 
@@ -247,13 +270,19 @@ module Tax
           end
         end
 
-        def rate_for(term, rates, on)
-          case term.rate
-          when "literal"                   then term.literal_rate
-          when "social_charges"            then rates.social_charges(on)
-          when "flat_tax"                  then rates.flat_tax(on)
-          when "flat_tax_income_component" then rates.flat_tax_income_component(on)
-          end
+        # One lookup, three sources, and no list of French rate names.
+        #
+        # `call` has already refused the account if a term names a rate this
+        # country's file does not define, so by the time anything reaches here
+        # the name resolves. That check is what lets this be a plain lookup
+        # rather than a case statement that would need an opinion about a rate
+        # it does not recognise -- and it is what stops an unrecognised rate
+        # from quietly becoming zero.
+        def rate_for(term, rates, on, assumptions)
+          return term.literal_rate if term.literal?
+          return assumptions.marginal_rate if term.household_rate?
+
+          rates.rate(term.rate, on)
         end
 
         def plain_english_bases

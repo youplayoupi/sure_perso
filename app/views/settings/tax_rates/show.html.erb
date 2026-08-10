@@ -25,7 +25,9 @@
     <p class="text-sm text-primary"><%= t(".edited_title") %></p>
     <p class="text-xs text-secondary max-w-prose">
       <%= t(".edited_body",
-            sections: @correction.edited_sections.map { |s| t("settings.tax_rates.sections.#{s}") }.to_sentence) %>
+            sections: @correction.edited_sections.map { |s|
+              t("settings.tax_rates.sections.#{s}", default: s.humanize)
+            }.to_sentence) %>
     </p>
     <%= button_to t(".reset"),
                   settings_taxes_rates_path,
@@ -46,53 +48,53 @@
 
   <%= settings_section title: t(".rates_title"), subtitle: t(".rates_subtitle") do %>
     <div class="@container space-y-8">
-      <%= render "settings/tax_rates/dated_section",
-                 section: "social_charges",
-                 title: t("settings.tax_rates.sections.social_charges"),
-                 hint: t(".social_charges_hint"),
-                 mine: @mine,
-                 shipped: @shipped %>
-
-      <%# The headline figure is appended only when it can be worked out. It is
-          the sum of this rate and social charges, so the one time it cannot be
-          computed is when one of them is unreadable -- which is the error path
-          of this very form, and no reason to take down the page that fixes
-          it. %>
-      <% headline = tax_headline_flat_tax(@mine) %>
-      <%= render "settings/tax_rates/dated_section",
-                 section: "flat_tax_income_component",
-                 title: t("settings.tax_rates.sections.flat_tax_income_component"),
-                 hint: [ t(".flat_tax_hint"),
-                         (t(".flat_tax_headline", headline: headline) if headline) ].compact.join(" "),
-                 mine: @mine,
-                 shipped: @shipped %>
+      <%# Which rates exist is the country file's business, not this page's.
+          Names and hints are looked up with the section's own name as the
+          fallback, so a country whose file carries a rate nobody has written a
+          translation for still gets an editable schedule with a readable
+          heading instead of a missing-translation error. %>
+      <% @shipped.dated_section_names.each do |section| %>
+        <%= render "settings/tax_rates/dated_section",
+                   section: section,
+                   title: t("settings.tax_rates.sections.#{section}",
+                            default: section.humanize),
+                   hint: t("settings.tax_rates.hints.#{section}", default: ""),
+                   mine: @mine,
+                   shipped: @shipped %>
+      <% end %>
     </div>
   <% end %>
 
-  <%= settings_section title: t(".brackets_title"), subtitle: t(".brackets_subtitle") do %>
-    <div class="@container space-y-4" data-controller="tax-rows">
-      <template data-tax-rows-target="template">
-        <%= render "settings/tax_rates/bracket_schedule",
-                   index: "IDX_PLACEHOLDER", entry: nil, shipped: nil %>
-      </template>
+  <% if @shipped.composites.any? %>
+    <%= settings_section title: t(".composites_title"), subtitle: t(".composites_subtitle") do %>
+      <div class="@container space-y-3">
+        <%# Read-only on purpose. A composite is a sum of rates edited above, so
+            a box here would be a second place to change one number -- and the
+            two would disagree the first time someone used it. The figure is
+            shown because it is the one people quote to each other: in France
+            nobody says "12.8 plus 17.2", they say "the flat tax is 30%".
 
-      <ul data-tax-rows-target="list" class="space-y-4">
-        <% tax_effective_dates(@mine, "income_tax_brackets").each_with_index do |date, index| %>
-          <%= render "settings/tax_rates/bracket_schedule",
-                     index: index,
-                     entry: tax_entry(@mine, "income_tax_brackets", date),
-                     shipped: tax_entry(@shipped, "income_tax_brackets", date) %>
+            A composite is dropped rather than shown as zero when one of its
+            parts is unreadable, which is the error path of this very form. %>
+        <% @shipped.composites.each do |name, parts| %>
+          <% headline = tax_composite_percent(@mine, name) %>
+          <div class="flex items-baseline justify-between gap-3 rounded-lg border border-secondary border-xs p-3">
+            <div class="min-w-0">
+              <p class="text-sm text-primary">
+                <%= t("settings.tax_rates.sections.#{name}", default: name.humanize) %>
+              </p>
+              <p class="text-xs text-subdued">
+                <%= t(".composite_parts",
+                      parts: parts.map { |p| t("settings.tax_rates.sections.#{p}", default: p.humanize) }.to_sentence) %>
+              </p>
+            </div>
+            <p class="text-sm text-primary tabular-nums shrink-0">
+              <%= headline ? "#{headline}%" : t("settings.tax_rates.none") %>
+            </p>
+          </div>
         <% end %>
-      </ul>
-
-      <%= render DS::Button.new(
-            text: t("settings.tax_rates.add_schedule"),
-            icon: "plus",
-            variant: "ghost",
-            type: "button",
-            data: { action: "tax-rows#add" }
-          ) %>
-    </div>
+      </div>
+    <% end %>
   <% end %>
 
   <%= settings_section title: t(".products_title"), subtitle: t(".products_subtitle") do %>

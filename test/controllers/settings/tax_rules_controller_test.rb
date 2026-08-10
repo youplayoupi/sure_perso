@@ -123,8 +123,8 @@ class Settings::TaxRulesControllerTest < ActionDispatch::IntegrationTest
 
   test "the builder offers exactly the choices the validator accepts" do
     # A form that offered a base the formula rejects would produce a rule that
-    # cannot be saved and an error nobody can act on. Both lists come from the
-    # engine's own constants, and this is what says so.
+    # cannot be saved and an error nobody can act on. The bases come from the
+    # engine's own constant, and this is what says so.
     get new_settings_taxes_rule_path
 
     assert_response :ok
@@ -132,9 +132,37 @@ class Settings::TaxRulesControllerTest < ActionDispatch::IntegrationTest
     assert_select "select[name=?]", "tax_rule[terms][0][base]" do
       Tax::Formula::BASES.each_key { |base| assert_select "option[value=?]", base }
     end
+  end
+
+  # The rates are not a constant. They are whatever this family's country file
+  # publishes, plus the household's own declared rate -- which no country file
+  # can publish, because it is not a fact about the country. Asserting against
+  # the table rather than a list is what lets a country file grow a rate and
+  # have it reach the builder without this form, this helper or this test being
+  # touched.
+  test "the builder offers the rates this family's country publishes" do
+    get new_settings_taxes_rule_path
 
     assert_select "select[name=?]", "tax_rule[terms][0][rate]" do
-      Tax::Formula::RATES.each { |rate| assert_select "option[value=?]", rate }
+      Tax.rate_table_for(@family, "FR").rate_names.each do |rate|
+        assert_select "option[value=?]", rate
+      end
+
+      assert_select "option[value=?]", Tax::Formula::HOUSEHOLD_RATE
+    end
+  end
+
+  # The old name for the household rate is still accepted by the validator, so
+  # that a rule saved before the rename goes on running. It must not be offered
+  # as a fresh choice, or the two names would both be in circulation and the
+  # alias would stop being a migration and start being a synonym.
+  test "the retired name for the household rate is not offered to new rules" do
+    get new_settings_taxes_rule_path
+
+    assert_select "select[name=?]", "tax_rule[terms][0][rate]" do
+      Tax::Formula::RATE_ALIASES.each_key do |retired|
+        assert_select "option[value=?]", retired, count: 0
+      end
     end
   end
 
@@ -243,7 +271,7 @@ class Settings::TaxRulesControllerTest < ActionDispatch::IntegrationTest
           name: "My PER",
           target: "account:#{account.id}",
           terms: {
-            "0" => { base: "paid_in_deducted", rate: "progressive", condition: "always" },
+            "0" => { base: "paid_in_deducted", rate: "household_rate", condition: "always" },
             "1" => { base: "gain_over_paid_in", rate: "flat_tax", condition: "always" }
           }
         }
@@ -255,7 +283,7 @@ class Settings::TaxRulesControllerTest < ActionDispatch::IntegrationTest
 
     assert formula.valid?, formula.errors.inspect
     assert_equal %w[paid_in_deducted gain_over_paid_in], formula.terms.map(&:base)
-    assert_equal %w[progressive flat_tax], formula.terms.map(&:rate)
+    assert_equal %w[household_rate flat_tax], formula.terms.map(&:rate)
 
     # The name is carried on the rule, not in the formula: it labels the
     # calculation, it is not part of it.
@@ -312,7 +340,7 @@ class Settings::TaxRulesControllerTest < ActionDispatch::IntegrationTest
       tax_rule: {
         target: "account:#{in_scope_account.id}",
         terms: {
-          "0" => { base: "paid_in", rate: "progressive" },
+          "0" => { base: "paid_in", rate: "household_rate" },
           "new_1" => { base: "full_value", rate: "social_charges" },
           "1" => { base: "gain_over_paid_in", rate: "flat_tax" }
         }
@@ -328,7 +356,7 @@ class Settings::TaxRulesControllerTest < ActionDispatch::IntegrationTest
     # row from the middle pairs one row's base with the next row's rate and the
     # rule still saves.
     rule = create_rule(
-      "0" => { base: "paid_in_deducted", rate: "progressive" },
+      "0" => { base: "paid_in_deducted", rate: "household_rate" },
       "1" => { base: "full_value", rate: "social_charges" },
       "2" => { base: "gain_over_paid_in", rate: "flat_tax" }
     )
@@ -337,7 +365,7 @@ class Settings::TaxRulesControllerTest < ActionDispatch::IntegrationTest
       tax_rule: {
         target: "account:#{in_scope_account.id}",
         terms: {
-          "0" => { base: "paid_in_deducted", rate: "progressive" },
+          "0" => { base: "paid_in_deducted", rate: "household_rate" },
           "2" => { base: "gain_over_paid_in", rate: "flat_tax" }
         }
       }
@@ -345,7 +373,7 @@ class Settings::TaxRulesControllerTest < ActionDispatch::IntegrationTest
 
     terms = rule.reload.formula.terms
 
-    assert_equal [ [ "paid_in_deducted", "progressive" ], [ "gain_over_paid_in", "flat_tax" ] ],
+    assert_equal [ [ "paid_in_deducted", "household_rate" ], [ "gain_over_paid_in", "flat_tax" ] ],
                  terms.map { |t| [ t.base, t.rate ] }
   end
 
@@ -497,7 +525,7 @@ class Settings::TaxRulesControllerTest < ActionDispatch::IntegrationTest
   test "editing replaces the formula rather than appending to it" do
     rule = create_rule(
       "0" => { base: "full_value", rate: "social_charges" },
-      "1" => { base: "paid_in", rate: "progressive" }
+      "1" => { base: "paid_in", rate: "household_rate" }
     )
 
     patch settings_taxes_rule_path(rule), params: {

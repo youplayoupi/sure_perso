@@ -22,12 +22,18 @@ module Tax
       value.is_a?(BigDecimal) ? value : BigDecimal(value.to_s)
     end
 
+    # A household that has declared 30%, which is the flat tax to the decimal
+    # and therefore the assumption that makes a household-rate term and a
+    # flat-tax term produce the same number. Useful as a default precisely
+    # because it hides nothing: a test that only passes at 30% is a test that
+    # was not looking at which rate applied. `at_rate` exists for the cases
+    # that have to tell them apart.
     def flat30
-      Tax::Assumptions.new(tmi_mode: :flat, flat_rate: d("0.30"))
+      Tax::Assumptions.new(marginal_rate: d("0.30"))
     end
 
-    def bareme(other: 0, parts: 1)
-      Tax::Assumptions.new(tmi_mode: :bareme, other_taxable_income: d(other), parts: d(parts))
+    def at_rate(rate)
+      Tax::Assumptions.new(marginal_rate: d(rate))
     end
 
     def subject(**overrides)
@@ -47,8 +53,13 @@ module Tax
       Tax::Rules::Composed.new(**params)
     end
 
+    # Warnings are Tax::Message objects -- a key and its values -- so that the
+    # view edge can render them in the reader's language. The English is what
+    # is asserted on here: it is what a locale with no entry falls back to, and
+    # it is the sentence a reader actually gets. `to_s` is where a Message
+    # becomes it.
     def warned?(result, fragment)
-      result.warnings.any? { |w| w.include?(fragment) }
+      result.warnings.any? { |w| w.to_s.include?(fragment) }
     end
   end
 
@@ -69,8 +80,40 @@ module Tax
       assert_match(/unknown base/, formula.errors.join)
     end
 
-    def test_an_unknown_rate_is_rejected
+    # A rate name is checked against the country's own file when the caller has
+    # it, and only for shape when it does not. The looser branch is not
+    # laxness: the set of rate names belongs to the country, and a Formula
+    # asked to validate itself with no country in hand cannot tell an invented
+    # name from a real Belgian one. Every caller inside the app passes a table.
+    def test_a_rate_the_country_does_not_publish_is_rejected
       formula = Tax::Formula.new(terms: [ { base: "full_value", rate: "whatever" } ])
+
+      refute formula.valid?(known_rates: RATES.rate_names)
+      assert_match(/unknown rate/, formula.errors(known_rates: RATES.rate_names).join)
+    end
+
+    def test_a_rate_this_country_does_publish_is_accepted
+      formula = Tax::Formula.new(terms: [ { base: "full_value", rate: "social_charges" } ])
+
+      assert formula.valid?(known_rates: RATES.rate_names),
+             formula.errors(known_rates: RATES.rate_names).inspect
+    end
+
+    # The household's own rate is never in the file -- it is an assertion by
+    # the household, not a figure the country publishes -- so it has to pass
+    # the check that the file governs.
+    def test_the_household_rate_passes_without_being_in_the_file
+      formula = Tax::Formula.new(terms: [ { base: "paid_in_deducted", rate: "household_rate" } ])
+
+      refute_includes RATES.rate_names, "household_rate"
+      assert formula.valid?(known_rates: RATES.rate_names),
+             formula.errors(known_rates: RATES.rate_names).inspect
+    end
+
+    # With no table to check against, a name that could not be a section of any
+    # rate file is still refused. That is all the loose branch can honestly do.
+    def test_a_malformed_rate_name_is_rejected_even_with_no_country_in_hand
+      formula = Tax::Formula.new(terms: [ { base: "full_value", rate: "Not A Rate" } ])
 
       refute formula.valid?
       assert_match(/unknown rate/, formula.errors.join)
@@ -230,19 +273,34 @@ module Tax
       )
     end
 
-    def test_capital_and_gains_matches_its_formula_on_the_progressive_scale
+    # Run at a household rate that is *not* the flat tax, so that the two terms
+    # of this rule are multiplied by two different numbers. At 30% the rule and
+    # its formula could disagree about which rate goes on which base and still
+    # come to the same total, which is the one bug this test exists to catch.
+    def test_capital_and_gains_matches_its_formula_at_a_household_rate
       assert_equivalent(
         Tax::Rules::Fr::CapitalAndGains.new,
         extra: { product: "per", subtype: nil },
-        assumptions: bareme(other: 40_000, parts: 2)
+        assumptions: at_rate("0.11")
       )
     end
 
-    def test_capital_and_gains_matches_its_formula_at_a_flat_rate
+    def test_capital_and_gains_matches_its_formula_at_a_rate_above_the_flat_tax
       assert_equivalent(
         Tax::Rules::Fr::CapitalAndGains.new,
         extra: { product: "per", subtype: nil },
-        assumptions: flat30
+        assumptions: at_rate("0.41")
+      )
+    end
+
+    # The elected-bareme twin. Both its terms take the household rate, so this
+    # is the case where getting the rate wrong is invisible in the split and
+    # visible only in the total.
+    def test_capital_and_gains_at_the_household_rate_matches_its_formula
+      assert_equivalent(
+        Tax::Rules::Fr::CapitalAndGainsAtHouseholdRate.new,
+        extra: { product: "per", subtype: nil },
+        assumptions: at_rate("0.11")
       )
     end
 
@@ -484,22 +542,39 @@ module Tax
       assert warned?(result, "one of the two figures is wrong")
     end
 
-    def test_a_progressive_term_reports_income_that_stacks_across_accounts
-      rule = composed(terms: [ { base: "paid_in_deducted", rate: "progressive" } ])
+    # `household_rate_income` is disclosure, not arithmetic. It says how much of
+    # this account's base was multiplied by a figure the household typed rather
+    # than by one the country publishes, so that the report can total it and
+    # say how much of the bill rests on that figure. Nothing downstream feeds
+    # it back into a calculation -- a single marginal rate distributes over a
+    # sum, so there is nothing to stack.
+    def test_a_household_rate_term_discloses_the_base_it_rested_on
+      rule = composed(terms: [ { base: "paid_in_deducted", rate: "household_rate" } ])
       result = run_rule(rule, subject(paid_in: d(30_000), paid_in_deducted: d(30_000)),
-                        assumptions: bareme(other: 20_000, parts: 1))
+                        assumptions: at_rate("0.11"))
 
-      assert_operator result.tax, :>, 0
-      # Only the progressive stream stacks; a flat-tax term must not.
-      assert_equal d(30_000), result.bareme_income
+      assert_equal d(3_300), result.tax
+      assert_equal d(30_000), result.household_rate_income
     end
 
-    def test_a_flat_rate_term_does_not_stack
+    def test_a_published_rate_term_discloses_nothing
       rule = composed(terms: [ { base: "gain_over_paid_in", rate: "flat_tax" } ])
       result = run_rule(rule, subject(value: d(110_000), paid_in: d(100_000)),
-                        assumptions: bareme(other: 20_000, parts: 1))
+                        assumptions: at_rate("0.11"))
 
-      assert_equal 0, result.bareme_income
+      assert_equal 0, result.household_rate_income
+    end
+
+    # The old spelling. A household that saved a rule before the barème came
+    # out reads back as one asking for their own marginal rate, which is the
+    # arithmetic they were asking for either way.
+    def test_a_rule_stored_under_the_old_name_still_runs
+      rule = composed(terms: [ { base: "paid_in_deducted", rate: "progressive" } ])
+      result = run_rule(rule, subject(paid_in: d(30_000), paid_in_deducted: d(30_000)),
+                        assumptions: at_rate("0.11"))
+
+      assert_equal d(3_300), result.tax
+      assert_equal "household_rate", rule.formula.terms.first.rate
     end
 
     def test_named_rates_are_read_at_the_valuation_date
@@ -524,8 +599,8 @@ module Tax
       )
       result = run_rule(rule, subject(value: d(110_000), paid_in: d(100_000), paid_in_deducted: d(100_000)))
 
-      assert_match(/10\.0% on 100000\.0/, result.basis)
-      assert_match(/20\.0% on 10000\.0/, result.basis)
+      assert_match(/10\.0% on 100000\.0/, result.basis.to_s)
+      assert_match(/20\.0% on 10000\.0/, result.basis.to_s)
       assert_equal d(12_000), result.tax
     end
   end

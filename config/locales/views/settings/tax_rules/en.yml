@@ -20,7 +20,7 @@ en:
       social_charges: social charges
       flat_tax: flat tax
       flat_tax_income_component: income-tax part of the flat tax
-      progressive: progressive income-tax scale
+      household_rate: your marginal rate
       literal: a fixed rate you set
   settings:
     tax_rules:
@@ -114,8 +114,9 @@ en:
         terms_title: The calculation
         terms_hint: >-
           One line per thing that is taxed. A pension wrapper taken as a lump
-          sum usually needs two: the payments you deducted from your income go
-          to the income-tax scale, and the growth on top takes the flat tax.
+          sum usually needs two: the payments you deducted from your income are
+          taxed at your marginal rate, and the growth on top takes the flat
+          tax.
         add_term: Add a term
         maturity_title: Maturity clock, in years
         maturity_hint: >-

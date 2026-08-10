@@ -76,6 +76,65 @@ module TaxReportsHelper
     t("tax.rules.#{rule_id}.description", default: fallback)
   end
 
+  # A sentence the engine produced, in the reader's language.
+  #
+  # The engine names its sentences instead of spelling them out (see
+  # Tax::Message) for the same reason the rule labels above are named: it loads
+  # into a bare Ruby process and may not reach for I18n. So every warning,
+  # every `basis` line and every clause on the rules screen arrives here as a
+  # key and its values, and this is where a language is finally chosen.
+  #
+  # Three things can arrive.
+  #
+  # A Tax::Message is looked up under its own key with the engine's English as
+  # the `default:`. A locale missing a key therefore gets a legible English
+  # sentence rather than an identifier, which is what lets a message ship on
+  # the day it is written and be translated on another one.
+  #
+  # A Tax::Message::List is joined here rather than by the engine, because the
+  # joining word is itself a translation. A nil connector means commas only --
+  # one clause narrowing the next, not a list of separate things.
+  #
+  # A String passes through untouched, and that is not laziness.
+  # Tax::Rules::Composed carries the name and notes a family typed into their
+  # own custom rule. Those are the household's own words about their own money,
+  # and putting them through a translation table would be a category error.
+  def tax_message(value)
+    case value
+    when Tax::Message::List then tax_message_list(value)
+    when Tax::Message
+      t(value.i18n_key, default: value.to_s, **tax_message_args(value.args))
+    when ::Array then tax_message_list(Tax::Message::List.new(value))
+    when nil then nil
+    else value.to_s
+    end
+  end
+
+  # Rendered depth-first, so a fact nested inside a refusal is already in the
+  # reader's language before the sentence that contains it is assembled.
+  def tax_message_args(args)
+    args.transform_values do |value|
+      case value
+      when Tax::Message, Tax::Message::List, ::Array then tax_message(value)
+      # The one kind of value the engine deliberately leaves raw. `l` knows the
+      # reader's month names; the engine only knows English ones.
+      when ::Date then l(value, format: :long)
+      else value
+      end
+    end
+  end
+
+  def tax_message_list(list)
+    parts = list.items.filter_map { |item| tax_message(item).presence }
+    return "" if parts.empty?
+    return parts.to_sentence(words_connector: ", ", last_word_connector: ", ") if list.connector.nil?
+
+    word = t("tax.connectors.#{list.connector}",
+             default: Tax::Vocabulary.connector(list.connector))
+
+    parts.to_sentence(two_words_connector: " #{word} ", last_word_connector: " #{word} ")
+  end
+
   # The product list is read from the rate file rather than hard-coded, so
   # adding a product to config/tax/*.yml puts it in this dropdown with no Ruby
   # change. That is the same list Tax::Profile validates against, so the form

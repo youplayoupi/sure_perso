@@ -24,7 +24,7 @@ module Tax
   # wrong number arrived at by arithmetic this file can perform.
   #
   # The two uses check each other. Every built-in declares its formula, and
-  # test/models/tax/formula_equivalence_test.rb asserts that running the
+  # test/models/tax/formula_test.rb asserts that running the
   # declared formula gives the same tax, to the cent, as the hand-written rule
   # across a matrix of accounts. Change Rules::Fr::Pea's arithmetic without
   # changing its formula and that test fails -- which is what stops the
@@ -67,26 +67,40 @@ module Tax
       "paid_in_not_deducted" => { needs: [ :paid_in ] }
     }.freeze
 
-    # What a term multiplies its base by.
+    # The two rates that do not come from a country's rate file.
     #
-    # The named rates are looked up in the rate table at the valuation date, so
-    # a formula written today keeps giving the right answer for a 2025
-    # valuation after the 2026 rates land. A literal is stored on the term
-    # itself and is the escape hatch for a rate this module does not track.
-    RATES = %w[
-      social_charges
-      flat_tax
-      flat_tax_income_component
-      progressive
-      literal
-    ].freeze
+    # Everything else a term may name is a section of that file --
+    # `social_charges`, `flat_tax` -- looked up at the valuation date, so a
+    # formula written today keeps giving the right answer for a 2025 valuation
+    # after the 2026 rates land. Those names are not listed here on purpose:
+    # they belong to the country, and hard-coding France's set is exactly what
+    # would stop a second country's file from working. `known_rates:` below is
+    # how a caller that has the table checks a name against it.
+    #
+    # The household's own marginal rate of income tax, set under Taxes. Routed
+    # through Assumptions rather than RateTable because it is an assertion by
+    # the household, not a figure the country publishes -- and it is the one
+    # rate the report has to keep flagging as such.
+    HOUSEHOLD_RATE = "household_rate"
 
-    # `progressive` is not a rate at all -- it is the income-tax scale, where
-    # the amount due depends on what else the household is liquidating that
-    # year. It is the only kind that cannot be printed as a percentage, the
-    # only one that stacks across accounts, and the only one routed through
-    # Assumptions rather than RateTable.
-    PROGRESSIVE = "progressive"
+    # A rate stored on the term itself. The escape hatch for a rate this
+    # module does not track.
+    LITERAL = "literal"
+
+    BUILT_IN_RATES = [ HOUSEHOLD_RATE, LITERAL ].freeze
+
+    # `progressive` was what `household_rate` used to be called, back when it
+    # meant "run the income-tax scale" rather than "apply the rate you told us".
+    # Rules stored under the old name are read as the new one rather than
+    # refused: the arithmetic they asked for is the arithmetic they now get,
+    # and refusing a household's saved PER rule on upgrade to make a point
+    # about vocabulary would be the module failing at its actual job. The new
+    # spelling is what gets written back on the next save.
+    RATE_ALIASES = { "progressive" => HOUSEHOLD_RATE }.freeze
+
+    # A name that could be a section of some country's rate file. Used only
+    # when no table is at hand to check against; see `errors`.
+    RATE_NAME = /\A[a-z][a-z0-9_]*\z/
 
     CONDITIONS = %w[always mature immature].freeze
 
@@ -123,7 +137,7 @@ module Tax
       def initialize(base:, rate:, literal_rate: nil, condition: "always",
                      opened_from: nil, opened_until: nil)
         @base = base.to_s
-        @rate = rate.to_s
+        @rate = RATE_ALIASES.fetch(rate.to_s, rate.to_s)
         @condition = condition.to_s
 
         # The raw values are kept beside the parsed ones so that unreadable
@@ -171,9 +185,15 @@ module Tax
         end
       end
 
-      def literal? = rate == "literal"
+      def literal? = rate == LITERAL
 
-      def progressive? = rate == PROGRESSIVE
+      # Taxed at the rate the household declared, rather than at one the
+      # country publishes. The only kind of term that cannot be printed as a
+      # percentage without saying whose percentage it is.
+      def household_rate? = rate == HOUSEHOLD_RATE
+
+      # A rate this term expects to find in the country's rate file.
+      def named_rate? = !literal? && !household_rate?
 
       def conditional? = condition != "always"
 
@@ -206,10 +226,10 @@ module Tax
       # Collected rather than raised on, so that a form can show every problem
       # at once and a row written by a future version of this module degrades
       # to a refusal instead of an exception.
-      def errors
+      def errors(known_rates: nil)
         problems = []
         problems << "unknown base #{base.inspect}" unless BASES.key?(base)
-        problems << "unknown rate #{rate.inspect}" unless RATES.include?(rate)
+        problems.concat(rate_name_errors(known_rates))
         problems << "unknown condition #{condition.inspect}" unless CONDITIONS.include?(condition)
         problems << "a literal rate needs a percentage" if literal? && @literal_rate_raw.nil?
         problems << "a percentage belongs only on a literal rate" if !literal? && !@literal_rate_raw.nil?
@@ -227,6 +247,30 @@ module Tax
       end
 
       private
+        # Checked against the country's own rate names when the caller has
+        # them, and only for shape when it does not.
+        #
+        # The distinction matters because getting it wrong is silent in one
+        # direction: a term naming "social_charge" would save cleanly, then
+        # refuse the account months later on a report nobody was watching.
+        # Every caller inside the app has a rate table -- the rule builder, the
+        # settings controller, Rules::Composed -- so in practice the strict
+        # branch is the one that runs, and the loose one exists so that a
+        # formula can still be parsed and displayed with no country in hand.
+        def rate_name_errors(known_rates)
+          return [] if BUILT_IN_RATES.include?(rate)
+
+          if known_rates.nil?
+            return [] if RATE_NAME.match?(rate)
+
+            return [ "unknown rate #{rate.inspect}" ]
+          end
+
+          return [] if Array(known_rates).map(&:to_s).include?(rate)
+
+          [ "unknown rate #{rate.inspect}" ]
+        end
+
         def bounds_readable?
           (@opened_from_raw.nil? || !opened_from.nil?) &&
             (@opened_until_raw.nil? || !opened_until.nil?)
@@ -325,16 +369,19 @@ module Tax
     # was opened, and a rule can use either, both or neither.
     def uses_vintage? = terms.any?(&:vintage?)
 
-    def stacks? = terms.any?(&:progressive?)
+    # Whether any term rests on the rate the household declared, and therefore
+    # on the one figure in the calculation that Sure did not get from a
+    # published source.
+    def uses_household_rate? = terms.any?(&:household_rate?)
 
     # Every account fact this formula cannot do without, across all its terms.
     def needs
       terms.flat_map(&:needs).uniq
     end
 
-    def errors
+    def errors(known_rates: nil)
       problems = terms.each_with_index.flat_map do |term, index|
-        term.errors.map { |e| "term #{index + 1}: #{e}" }
+        term.errors(known_rates: known_rates).map { |e| "term #{index + 1}: #{e}" }
       end
 
       if uses_clock? && maturity_years.nil?
@@ -348,6 +395,6 @@ module Tax
       problems
     end
 
-    def valid? = errors.empty?
+    def valid?(known_rates: nil) = errors(known_rates: known_rates).empty?
   end
 end

@@ -23,6 +23,14 @@ class Settings::TaxesController < ApplicationController
     @catalogue = Tax::Catalogue.entries
     @pinned    = pinned_rules
 
+    # The household's own marginal rate, which is the one figure on any of
+    # these pages that is a fact about the people rather than about an account,
+    # a product or a country. It sits at the top of this page rather than on a
+    # screen of its own because nobody sets it on purpose: they set it on the
+    # way to reading the report, and a page they have to find first is a page
+    # they will not.
+    @household = Tax::Household.for(Current.family)
+
     # A second registry with no custom rules, so each row can say what would
     # happen if the family's own choice were removed. Without it the "use the
     # built-in" option would have to be labelled generically, and the one

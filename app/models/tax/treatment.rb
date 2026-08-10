@@ -40,10 +40,11 @@ module Tax
         SUGGESTED_RULE[treatment&.to_sym]
       end
 
+      # A Message, not a String, because it is dropped into the middle of two
+      # sentences that get translated and would otherwise be the one English
+      # word left standing in a French warning.
       def label(treatment)
-        return "unclassified" if treatment.nil?
-
-        treatment.to_s.tr("_", " ")
+        Message.new("treatments.#{treatment.nil? ? 'unclassified' : treatment}")
       end
 
       # Compare what Sure believes about an account with what the rule actually
@@ -59,17 +60,21 @@ module Tax
 
         warnings = []
 
+        # This sentence used to name the jurisdiction, as `result.currency ||
+        # "FR"`. Neither half of that was a country: a Result carries "EUR",
+        # so the warning read "the EUR rule taxes it", and the fallback was a
+        # country code standing in for a currency in a slot that wanted a
+        # country. Nothing on a Subject or a Result knows which country's file
+        # the rule came from, so the sentence no longer claims to. Saying less
+        # is the only fix available that is not a plumbing change, and the
+        # warning does not need the name to be actionable.
         if treatment == :tax_exempt && result.tax && result.tax.positive?
-          warnings << "Sure classifies this account as tax exempt, but the #{result.currency || 'FR'} " \
-                      "rule taxes it. Exemption is granted by the country the product " \
-                      "belongs to, and does not transfer. Check which is right before " \
-                      "relying on either."
+          warnings << Message.new("treatment.tax_exempt_but_taxed")
         end
 
         if %i[tax_deferred tax_advantaged].include?(treatment) && result.product == "cto"
-          warnings << "Sure classifies this account as #{label(treatment)}, but it is being " \
-                      "taxed as an ordinary securities account. If the wrapper really is " \
-                      "tax-advantaged, it needs its own rule."
+          warnings << Message.new("treatment.deferred_or_advantaged_but_cto",
+                                  treatment: label(treatment))
         end
 
         warnings

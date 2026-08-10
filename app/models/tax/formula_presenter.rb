@@ -20,11 +20,17 @@ module Tax
   #
   # Two things it deliberately does not do.
   #
-  # It does not translate. The engine writes English -- its refusals and its
-  # `basis` sentences already do -- and translation happens at the view edge in
-  # TaxReportsHelper, which is allowed to know what language it is rendering
-  # in. Keeping this file plain Ruby means the rules page can be tested in the
-  # same bare process as the arithmetic it describes.
+  # It does not translate. Every phrase it produces is a Tax::Message -- a key
+  # and its values -- exactly like the engine's refusals and `basis` sentences,
+  # and translation happens at the view edge in TaxReportsHelper, which is
+  # allowed to know what language it is rendering in. Keeping this file plain
+  # Ruby means the rules page can be tested in the same bare process as the
+  # arithmetic it describes.
+  #
+  # That is also why the clauses are assembled from keys rather than by
+  # interpolation. "31.4% flat tax on the gain" puts the rate in front of the
+  # base; a language that puts it after has to be able to say so, and a
+  # `"#{rate} on #{base}"` here would have decided for it.
   #
   # And it does not compute tax. Every number here is a rate or a threshold,
   # never a sum of money. If the reader wants to know what a rule does to a
@@ -35,17 +41,30 @@ module Tax
     # One term, resolved. `sentence` is the whole line as prose; the parts are
     # exposed beside it so a table can lay them out in columns instead.
     Line = Struct.new(
-      :base, :rate, :percent, :progressive, :condition, :window, :sentence,
+      :base, :rate, :percent, :household_rate, :condition, :window, :sentence,
       keyword_init: true
     ) do
-      def progressive? = !!progressive
+      # The one rate this page cannot put a number on even in principle: it is
+      # not in the country's file, it is what the household said about itself,
+      # and the rules page describes a rule rather than a household.
+      def household_rate? = !!household_rate
 
       # True when the rate is named in the rate file but could not be read on
       # this date -- the file has no entry that early, typically. The line
       # still renders, naming the rate without a number, because "social
       # charges, rate unknown for 2011" is honest and dropping the line
       # silently is not.
-      def unresolved? = !progressive? && percent.nil?
+      def unresolved? = !household_rate? && percent.nil?
+
+      # The two narrowings as one phrase, for the "when" column. Assembled here
+      # rather than joined in the template: how two clauses run together is a
+      # question about language, and a template is not where it gets answered.
+      def when_clause
+        parts = [ condition, window ].compact
+        return nil if parts.empty?
+
+        Message::List.new(parts, connector: nil)
+      end
     end
 
     attr_reader :formula, :rates, :on, :product
@@ -69,7 +88,7 @@ module Tax
 
     def notes = formula.notes
 
-    def stacks? = formula.stacks?
+    def uses_household_rate? = formula.uses_household_rate?
 
     def uses_clock? = formula.uses_clock?
 
@@ -101,21 +120,22 @@ module Tax
     # see stated. A livret and an account nobody has written a rule for both
     # produce no terms; only one of them means the tax is zero.
     def headline
-      return "Nothing is taxed when this account is liquidated." if empty?
+      return Message.new("formula.nothing_taxed") if empty?
 
-      "Tax is #{Vocabulary.to_sentence(lines.map(&:sentence))}."
+      Message.new("formula.headline", terms: Message::List.new(lines.map(&:sentence)))
     end
 
     # The facts an account has to carry before this rule will compute, in the
-    # same words the refusal uses when one is missing.
+    # same words -- the same keys, now -- that the refusal uses when one is
+    # missing.
     def needs
-      formula.needs.map { |fact| Vocabulary.fact(fact) }
+      formula.needs.map { |fact| Message.new("facts.#{fact}") }
     end
 
     def needs_sentence
       return nil if needs.empty?
 
-      "Needs #{Vocabulary.to_sentence(needs)}."
+      Message.new("formula.needs", facts: Message::List.new(needs))
     end
 
     private
@@ -126,7 +146,7 @@ module Tax
           base: Vocabulary.base(term.base),
           rate: rate_label(term, percent),
           percent: percent,
-          progressive: term.progressive?,
+          household_rate: term.household_rate?,
           condition: condition_label(term),
           window: window_label(term),
           sentence: sentence_for(term, percent)
@@ -134,57 +154,82 @@ module Tax
       end
 
       # The resolved rate as a fraction, or nil when there is no single number
-      # to give: the progressive scale, a rate table this page does not have,
-      # or a date the table does not reach back to.
+      # to give: the household's own rate, a rate table this page does not
+      # have, a rate this country's file does not carry, or a date the table
+      # does not reach back to.
+      #
+      # Asked of the table by name rather than switched on here. The switch
+      # this replaced listed France's three rates, which meant a second
+      # country's file could declare a rate, have it accepted by the validator
+      # and computed by the engine, and still render on this page as a bare
+      # name with no figure -- the one screen whose job is to put figures on
+      # names.
       def percent_for(term)
         return term.literal_rate if term.literal?
-        return nil if term.progressive?
+        return nil if term.household_rate?
         return nil if rates.nil?
+        return nil unless rates.rate?(term.rate)
 
-        case term.rate
-        when "social_charges"            then rates.social_charges(on)
-        when "flat_tax"                  then rates.flat_tax(on)
-        when "flat_tax_income_component" then rates.flat_tax_income_component(on)
-        end
+        rates.rate(term.rate, on)
       rescue Error
         nil
       end
 
-      # "17.2% social charges", "30.0% (the flat tax)", "the progressive
-      # income-tax scale".
+      # "17.2% social charges", "30.0% (the flat tax)", "your marginal rate".
       #
       # A literal rate is its own label -- naming it "a fixed rate" alongside
       # the number would be saying the same thing twice -- while a named rate
       # keeps its name beside the figure, because 17.2% means nothing on its
       # own and "social charges" is what the reader will look up.
       def rate_label(term, percent)
-        return Vocabulary.rate(term.rate) if term.progressive?
+        return Message.new("rates.#{term.rate}") if term.household_rate?
         return percentage(percent) if term.literal?
-        return Vocabulary.rate(term.rate) if percent.nil?
+        return Message.new("rates.#{term.rate}") if percent.nil?
 
-        "#{percentage(percent)} #{Vocabulary.rate(term.rate)}"
+        # Two pieces with a space between them in English, and not necessarily
+        # in that order elsewhere, so the order is in the template rather than
+        # in this concatenation.
+        Message.new("formula.rate_with_percent",
+                    percent: percentage(percent), rate: Message.new("rates.#{term.rate}"))
       end
 
       def condition_label(term)
         years = maturity_years
-        clock = years ? "#{years} years old" : "mature"
 
         case term.condition
-        when "mature"   then "once the account is #{clock}"
-        when "immature" then "while the account is under #{years || 'the maturity period'} years old"
+        when "mature"
+          Message.new("formula.condition_mature", clock: clock_label(years))
+        when "immature"
+          if years
+            Message.new("formula.condition_immature", years: years)
+          else
+            Message.new("formula.condition_immature_unknown_clock")
+          end
         end
       end
 
+      # "5 years old", or "mature" when the rule declares no period and none is
+      # in the rate file. The second is not a fallback string standing in for a
+      # number -- it is the only thing that can truthfully be said.
+      def clock_label(years)
+        return Message.new("formula.clock_unknown") if years.nil?
+
+        Message.new("formula.clock_years", years: years)
+      end
+
+      # Dates go in raw. Tax::Messages writes them out in English and the view
+      # edge hands the same Date to I18n.l, so a French reader gets "1 janvier
+      # 2013" without this file knowing there was a question.
       def window_label(term)
         return nil unless term.vintage?
 
-        from = Vocabulary.date(term.opened_from)
-        till = Vocabulary.date(term.opened_until)
+        from = term.opened_from
+        till = term.opened_until
 
-        if from && till then "for accounts opened between #{from} and #{till}"
-        elsif from       then "for accounts opened on or after #{from}"
-        elsif till       then "for accounts opened on or before #{till}"
-        else                  "for accounts whose opening window cannot be read"
+        if from && till then Message.new("formula.window_between", from: from, until: till)
+        elsif from       then Message.new("formula.window_from", from: from)
+        elsif till       then Message.new("formula.window_until", until: till)
+        else                  Message.new("formula.window_unreadable")
         end
       end
 
@@ -194,21 +239,30 @@ module Tax
       #
       # Three shapes, because a percentage and a name do not sit in a sentence
       # the same way. "31.4% flat tax on the gain" leads with the number, which
-      # is what the reader came for; the scale and the unresolved rate have no
-      # number to lead with, so they put the base first and the rate after it.
+      # is what the reader came for; the household rate and the unresolved rate
+      # have no number to lead with, so they put the base first and the rate
+      # after it.
       def sentence_for(term, percent)
-        base = Vocabulary.base(term.base)
+        base = Message.new("bases.#{term.base}")
 
         head =
-          if term.progressive?
-            "the #{Vocabulary.rate(term.rate)} on #{base}"
+          if term.household_rate?
+            Message.new("formula.head_named_rate",
+                        rate: Message.new("rates.#{term.rate}"), base: base)
           elsif percent.nil?
-            "#{base} at the #{Vocabulary.rate(term.rate)} rate"
+            Message.new("formula.head_unresolved_rate",
+                        base: base, rate: Message.new("rates.#{term.rate}"))
           else
-            "#{rate_label(term, percent)} on #{base}"
+            Message.new("formula.head_with_percent",
+                        rate: rate_label(term, percent), base: base)
           end
 
-        [ head, condition_label(term), window_label(term) ].compact.join(", ")
+        # No conjunction: each clause narrows the one before it rather than
+        # adding to it. See Tax::Message::List.
+        Message::List.new(
+          [ head, condition_label(term), window_label(term) ].compact,
+          connector: nil
+        )
       end
 
       # One decimal place where one will do, so that 18.6% and 30.0% line up in

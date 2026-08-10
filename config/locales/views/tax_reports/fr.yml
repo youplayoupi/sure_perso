@@ -62,12 +62,16 @@ fr:
         valeurs par défaut, et les chiffres ci-dessus ne valent que ce que
         valent ces hypothèses.
       assumption_liquidation: Tout est vendu le %{date}, sur un seul exercice fiscal.
-      assumption_income_bareme: >-
-        Les revenus soumis au barème progressif sont imposés en les empilant
-        sur %{income} d'autres revenus pour %{parts} part(s).
-      assumption_income_flat: >-
-        Les revenus soumis au barème progressif sont imposés au taux forfaitaire
-        de %{rate}.
+      assumption_marginal_rate: >-
+        Tout ce qui est imposé comme un revenu l'est à votre taux marginal de
+        %{rate}, que vous avez renseigné. Un retrait assez important pour faire
+        passer une partie de lui-même dans une tranche supérieure n'est pas
+        modélisé.
+      assumption_marginal_rate_undeclared_html: >-
+        Tout ce qui est imposé comme un revenu l'est à %{rate}. C'est une
+        valeur d'attente, pas votre taux — vous ne l'avez pas renseigné.
+        %{link}
+      assumption_marginal_rate_link: Renseigner votre taux marginal
       assumption_rates_html: >-
         Les taux sont ceux en vigueur à la date de valorisation ; voir
         <code>%{file}</code>.
@@ -93,6 +97,45 @@ fr:
     # TaxReportsHelper#tax_rule_label. L'anglais vient donc de là et il n'y a
     # pas de bloc `tax.rules` dans en.yml : ce fichier traduit, il ne double
     # pas.
+    #
+    # Le vocabulaire des formules suit la même règle. `bases` est une liste
+    # fermée — les clés de Tax::Formula::BASES — alors que `rates` est ouverte :
+    # ce sont les sections que déclare le fichier du pays, plus le taux du
+    # foyer. Un pays qui livre un `be.yml` nommant un taux inconnu d'ici le voit
+    # s'afficher sous son propre nom plutôt que de disparaître.
+    bases:
+      full_value: la totalité du solde
+      gain_over_paid_in: la plus-value au-delà des versements
+      gain_over_cost_basis: la plus-value au-delà du prix de revient
+      paid_in: les versements
+      paid_in_deducted: les versements déduits
+      paid_in_not_deducted: les versements non déduits
+    rates:
+      social_charges: prélèvements sociaux
+      flat_tax: flat tax
+      flat_tax_income_component: part impôt sur le revenu de la flat tax
+      household_rate: votre taux marginal
+      literal: taux fixe
+    facts:
+      paid_in: le total des versements
+      cost_basis: le prix de revient de ce qui est détenu
+      opened_on: la date d'ouverture du compte
+      acquisition_cost: le prix d'acquisition
+    # Les mots qui relient une liste. Deux, et ils ne sont pas
+    # interchangeables : une liste d'informations manquantes se relie par « et »,
+    # les lignes d'un calcul par « plus ».
+    connectors:
+      and: et
+      plus: plus
+    # L'énumération tax_treatment de Sure, dite au fil d'une phrase. Sure les
+    # traduit déjà sous `accounts.tax_treatments`, en capitales, pour un badge ;
+    # ici c'est la casse qu'une phrase demande.
+    treatments:
+      taxable: imposable
+      tax_deferred: à imposition différée
+      tax_exempt: exonéré d'impôt
+      tax_advantaged: fiscalement avantagé
+      unclassified: non classé
     rules:
       fr_pea:
         label: PEA (gain net, horloge de 5 ans)
@@ -117,11 +160,24 @@ fr:
           versements déduits sont imposés comme un revenu, les gains au
           prélèvement forfaitaire unique. À utiliser pour un PER tant que Sure
           n'a pas de sous-type dédié.
+      fr_capital_and_gains_household:
+        label: "Sortie en capital : barème sur les versements et sur les gains"
+        description: >-
+          La même sortie en capital, avec option pour le barème progressif
+          plutôt que le prélèvement forfaitaire unique : les gains sont eux
+          aussi imposés à votre taux marginal. À envisager lorsque votre taux
+          est inférieur à la flat tax.
       exempt:
         label: Exonéré
         description: >-
           Réellement non imposé à la liquidation. Le rapport affiche zéro, et
           le pense.
+      composed:
+        label: Règle personnalisée
+        description: >-
+          Écrivez la vôtre : choisissez l'assiette — la totalité du solde, la
+          plus-value, les versements — et le taux, avec une horloge de maturité
+          facultative.
     profiles:
       edit:
         title: Éléments fiscaux de %{account}
@@ -155,3 +211,250 @@ fr:
         cancel: Annuler
       update:
         saved: Éléments fiscaux enregistrés pour %{account}.
+    # Tout ce que le moteur peut dire à un lecteur, traduit.
+    #
+    # Les clés sont celles de Tax::Messages, et test/models/tax/messages_test.rb
+    # parcourt les deux listes : une clé ajoutée en Ruby sans traduction ici
+    # fait échouer la suite, plutôt que d'apparaître en anglais sur un rapport
+    # français six mois plus tard.
+    #
+    # Aucun modèle ne contient de signe pourcent littéral. `String#%` de Ruby
+    # lit `%%` comme un pourcent échappé et I18n n'y touche pas : le même
+    # modèle rendrait alors un taux différent selon le rendu qui s'en est
+    # chargé. Les pourcentages arrivent déjà formatés.
+    messages:
+      # --- Refus, tronc commun --------------------------------------------
+      base:
+        declare: Déclarez %{needs} sur ce compte pour qu'il soit calculé.
+        cannot_be_computed: ne peut pas être calculé
+        cost_basis_footnote: >-
+          Pour information seulement : le prix de revient est de %{cost_basis},
+          soit une plus-value de %{gain}. Le prix de revient n'est pas le
+          montant versé et n'est pas utilisé ici.
+
+      # --- L'écran des règles, via Tax::FormulaPresenter -------------------
+      formula:
+        nothing_taxed: Rien n'est imposé à la liquidation de ce compte.
+        headline: "L'impôt est de %{terms}."
+        needs: "Nécessite %{facts}."
+        rate_with_percent: "%{percent} %{rate}"
+        head_with_percent: "%{rate} sur %{base}"
+        head_named_rate: "%{rate} sur %{base}"
+        head_unresolved_rate: "%{base} au taux %{rate}"
+        condition_mature: dès que le compte a %{clock}
+        condition_immature: tant que le compte a moins de %{years} ans
+        condition_immature_unknown_clock: >-
+          tant que le compte n'a pas atteint sa durée de maturité
+        clock_years: "%{years} ans"
+        clock_unknown: atteint sa maturité
+        window_between: pour les comptes ouverts entre le %{from} et le %{until}
+        window_from: pour les comptes ouverts à partir du %{from}
+        window_until: pour les comptes ouverts jusqu'au %{until}
+        window_unreadable: pour les comptes dont la fenêtre d'ouverture est illisible
+
+      # --- Compte-titres ordinaire (CTO) ----------------------------------
+      fr_securities:
+        no_cost_basis: >-
+          La plus-value est la valeur actuelle moins le prix d'acquisition des
+          titres, et aucun prix de revient n'est enregistré sur les lignes de ce
+          compte.
+        latent_loss: >-
+          Moins-value latente de %{loss}. Les moins-values réalisées s'imputent
+          sur les plus-values pendant dix ans, ce qui n'est pas modélisé.
+        declared_cost: >-
+          Le montant déclaré est utilisé comme prix d'acquisition. Pour un
+          compte-titres, la bonne assiette est ce qu'ont coûté les titres, et
+          non les espèces versées sur le compte — vérifiez que le montant
+          déclaré est bien le premier.
+        flat_tax_assumed: >-
+          La flat tax est supposée. Opter pour le barème progressif peut être
+          plus favorable en dessous d'environ %{rate} de taux effectif, ce qui
+          n'est pas modélisé.
+        basis: flat tax %{rate} sur la plus-value (prix de revient %{cost})
+
+      # --- PEA (gain net, horloge de 5 ans) -------------------------------
+      fr_pea:
+        no_paid_in: >-
+          L'impôt sur un PEA porte sur le gain net, c'est-à-dire la valeur
+          actuelle moins le total des versements. Sure ne stocke pas le montant
+          versé.
+        loss: >-
+          La valeur est inférieure de %{loss} au montant versé. Une moins-value
+          n'est pas imposée. Une moins-value réalisée à la clôture du plan peut
+          être imputable, ce qui n'est pas modélisé.
+        no_opening_date: >-
+          La date d'ouverture n'est pas déclarée, le compteur de %{maturity} ans
+          ne peut donc pas être vérifié. Le plan est supposé mature. S'il ne
+          l'est pas, l'impôt serait de %{immature_tax} au lieu de %{mature_tax}.
+        immature: >-
+          Le plan a %{age} ans, soit moins de %{maturity}. Tout retrait le
+          clôture et la totalité du gain est imposée au taux plein.
+        exceeds_ceiling: >-
+          Les versements de %{paid_in} dépassent le plafond de %{ceiling} de ce
+          plan.
+        taux_historiques: >-
+          Ouvert entre 2013 et 2017 : une partie du gain peut relever des taux
+          de prélèvements sociaux en vigueur au moment où elle a été acquise.
+          Ce n'est pas modélisé, l'impôt affiché ici peut donc être surestimé.
+        basis_mature: >-
+          prélèvements sociaux %{rate} sur le gain net (plan mature, exonéré
+          d'impôt sur le revenu)
+        basis_immature: flat tax %{rate} sur le gain net (plan de moins de %{maturity} ans)
+
+      # --- Comptes de dépôt -----------------------------------------------
+      fr_deposit:
+        taxable_savings: >-
+          Les intérêts de ce compte sont imposables au fil de l'eau, à la flat
+          tax ou au barème progressif. Cet impôt n'apparaît pas ici : ce rapport
+          ne couvre que la liquidation, et retirer un solde en espèces n'est pas
+          imposé en soi.
+        checking: >-
+          Le solde d'un compte courant n'est pas imposé au retrait. Les intérêts
+          qu'il verse le sont au fil de l'eau et sortent du cadre de ce rapport.
+        unknown_product: >-
+          Retirer un solde en espèces n'est pas un fait générateur : l'impôt de
+          liquidation est donc nul. S'il s'agit d'un livret fiscalisé et non
+          d'un Livret A ou d'un LDDS, ses intérêts sont imposés au fil de l'eau
+          et n'apparaissent pas ici. Déclarez le produit de ce compte pour lever
+          l'ambiguïté.
+        exceeds_ceiling: >-
+          Le solde dépasse le plafond de dépôt de %{ceiling}. Les intérêts se
+          capitalisent au-dessus du plafond en toute légalité, mais un solde
+          nettement supérieur peut signaler un produit mal identifié.
+        basis_cash: aucun impôt à la liquidation d'un solde en espèces
+        note_interest_taxed_as_it_arises: >-
+          Les intérêts d'un livret fiscalisé sont imposés au fil de l'eau. Cet
+          impôt est réel et déjà payé ; il sort du cadre d'un rapport sur une
+          liquidation aujourd'hui.
+
+      # --- Capital et gains (sortie en capital) ---------------------------
+      fr_capital_and_gains:
+        no_paid_in: >-
+          Cette enveloppe se scinde en versements et en gains, imposés sous deux
+          régimes différents. Sure ne stocke pas le montant versé.
+        no_deducted: >-
+          La part déduite n'est pas déclarée : la totalité des versements est
+          donc supposée avoir été déduite. C'est l'hypothèse la plus imposée.
+          Déclarez-la si certains versements ont été faits sans prendre la
+          déduction.
+        deducted_exceeds_total: >-
+          La part déduite déclarée (%{deducted}) dépasse le total versé
+          (%{paid_in}). Elle est plafonnée au total ; l'un des deux chiffres est
+          faux.
+        lump_sum_caveat: >-
+          Le capital est imposé à votre taux marginal de %{rate} sur la
+          totalité. Une sortie de %{amount} prise en une seule année peut en
+          faire basculer une partie dans une tranche supérieure, ce qui n'est
+          pas modélisé — la note réelle serait alors plus élevée, jamais plus
+          basse.
+        non_deducted_untaxed: "%{amount} de versements non déduits reviennent sans impôt."
+        whole_wrapper_lump_sum: >-
+          Suppose que la totalité de l'enveloppe est prise en capital sur une
+          seule année fiscale. Étaler les retraits allège la note et n'est pas
+          modélisé.
+        mixed_election_not_modelled: >-
+          Suppose que vous avez opté pour le barème progressif plutôt que pour
+          la flat tax. Cette option couvre l'ensemble de vos revenus de capitaux
+          mobiliers de l'année : elle ne peut donc pas s'appliquer à ce seul
+          compte. Si un autre compte du rapport est à la flat tax, l'un des deux
+          est faux.
+        basis: >-
+          %{rate} de taux marginal sur %{amount} de versements déduits
+          (%{capital_tax}) plus %{gains_rate} sur %{gains} de gains
+          (%{gains_tax})
+
+      # --- Règle personnalisée --------------------------------------------
+      composed:
+        invalid_formula: >-
+          La règle personnalisée attachée à ce compte ne décrit pas un calcul
+          valide : %{problems}. Rien n'est supposé à la place — corrigez la
+          règle et ce compte sera calculé.
+        missing_facts: >-
+          Cette règle impose %{bases}, ce qui nécessite %{facts}. Ce n'est pas
+          renseigné sur ce compte.
+        no_deducted_portion: >-
+          La part déduite des versements n'est pas déclarée : la totalité est
+          donc supposée avoir été déduite. C'est l'hypothèse la plus imposée.
+        deducted_exceeds_total: >-
+          La part déduite déclarée (%{declared}) dépasse le total versé
+          (%{paid_in}). Elle est plafonnée au total ; l'un des deux chiffres est
+          faux.
+        no_opening_date: >-
+          Aucune date d'ouverture n'est déclarée, le compteur de %{years} ans ne
+          peut donc pas être vérifié. L'enveloppe est traitée comme mature, ce
+          qui donne %{mature_tax} ; si elle ne l'est pas, l'impôt serait de
+          %{young_tax}.
+        immature: >-
+          Cette enveloppe a %{age} ans, soit moins que les %{years} requises :
+          les termes qui dépendent du compteur sont imposés au taux
+          d'avant-maturité.
+        not_taxed_on_liquidation: non imposé à la liquidation
+        term: "%{rate} sur %{amount} (%{tax})"
+        term_household_rate: "%{rate} de taux marginal sur %{amount} (%{tax})"
+        basis: "%{terms}"
+
+      # --- Aucune règle (filet) -------------------------------------------
+      unknown:
+        no_rule: >-
+          Aucune règle fiscale pour %{description}. Le brut est rapporté ;
+          l'impôt est inconnu et exclu du total.
+        treatment_is_classification: >-
+          Sure le classe comme %{treatment}. C'est un classement, pas un taux :
+          il ne peut pas produire un chiffre à lui seul%{suggestion}.
+        suggestion: " — mais il suggère que la règle « %{rule} » conviendrait."
+        needs_custom_rule: >-
+          Si ce produit a été ajouté dans une version plus récente de Sure, il
+          lui faut une règle. On peut lui en attacher une comme règle
+          personnalisée, sans toucher au code.
+
+      # --- Règle d'exonération --------------------------------------------
+      exempt:
+        basis: exonéré d'impôt sur le revenu et de prélèvements sociaux
+        exceeds_ceiling: >-
+          Le solde dépasse le plafond de dépôt de %{ceiling}. C'est normal une
+          fois les intérêts capitalisés, mais un solde très supérieur peut
+          signaler un produit mal identifié.
+
+      # --- Contrôles de cohérence avec le classement de Sure ---------------
+      treatment:
+        tax_exempt_but_taxed: >-
+          Sure classe ce compte comme exonéré, mais la règle appliquée
+          l'impose. L'exonération est accordée par le pays auquel le produit
+          appartient et ne se transporte pas. Vérifiez lequel des deux a raison
+          avant de vous fier à l'un ou à l'autre.
+        deferred_or_advantaged_but_cto: >-
+          Sure classe ce compte comme %{treatment}, mais il est imposé comme un
+          compte-titres ordinaire. Si l'enveloppe est réellement avantagée, il
+          lui faut sa propre règle.
+
+      # --- Comptes sans valeur exploitable ---------------------------------
+      registry:
+        no_value: >-
+          La valeur de ce compte n'a pas pu être exprimée en %{currency} : il
+          est entièrement exclu des totaux, et non compté pour zéro.
+
+      # --- Délibérément non modélisé ---------------------------------------
+      not_modelled:
+        excluded_from_total: >-
+          Le brut est rapporté ; l'impôt est inconnu et exclu du total.
+        assurance_vie: >-
+          La fiscalité de l'assurance vie dépend de l'âge du contrat, de la
+          répartition entre capital et gains, d'un abattement annuel et de celui
+          des deux régimes dont relèvent les versements. Sure ne stocke rien de
+          tout cela.
+        crypto: >-
+          Les plus-values sur crypto-actifs se calculent en France sur une
+          formule qui répartit le prix total d'acquisition sur l'ensemble du
+          portefeuille, et non actif par actif. C'est un calcul différent de
+          celui des titres, et il n'est pas implémenté.
+        property: >-
+          Les plus-values immobilières dépendent de la qualité de résidence
+          principale et, à défaut, d'abattements qui croissent avec la durée de
+          détention. Non modélisé.
+
+      # --- Hypothèses -------------------------------------------------------
+      assumptions:
+        marginal_rate_caveat: >-
+          Aucun taux marginal du foyer n'a été renseigné : %{rate} est donc
+          supposé pour la part imposée comme un revenu. C'est une hypothèse, pas
+          votre taux — renseignez-le dans Impôts et ce chiffre changera.

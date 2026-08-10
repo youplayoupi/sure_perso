@@ -23,13 +23,24 @@ class FormulaPresenterTest < Minitest::Test
     Tax::FormulaPresenter.new(formula, rates: rates, on: on, product: product)
   end
 
+  # The presenter deals in Tax::Message objects -- a key and its values -- so
+  # that TaxReportsHelper can choose a language at the view edge. The English
+  # is still the thing under test: it is what a reader with no translation
+  # gets, and it is the `default:` every locale falls back to. So the
+  # assertions below are written against the sentence, and this is the one
+  # place the sentence gets made.
+  #
+  # A plain String passes through, because some parts genuinely are strings: a
+  # formatted percentage, or a note a family typed themselves.
+  def english(value) = value.to_s
+
   # -- resolving a named rate ---------------------------------------------
 
   def test_a_named_rate_is_shown_as_the_percentage_in_force_on_the_date
     line = present([ { base: "gain_over_paid_in", rate: "social_charges" } ]).lines.first
 
-    assert_equal "18.6% social charges", line.rate
-    assert_equal "18.6% social charges on the gain over what was paid in", line.sentence
+    assert_equal "18.6% social charges", english(line.rate)
+    assert_equal "18.6% social charges on the gain over what was paid in", english(line.sentence)
   end
 
   # The whole reason rates are looked up at a date rather than frozen into the
@@ -37,15 +48,15 @@ class FormulaPresenterTest < Minitest::Test
   def test_the_same_formula_reads_differently_before_and_after_a_rate_change
     terms = [ { base: "gain_over_paid_in", rate: "flat_tax" } ]
 
-    assert_includes present(terms, on: Date.new(2025, 6, 1)).lines.first.sentence, "30.0%"
-    assert_includes present(terms, on: Date.new(2026, 6, 1)).lines.first.sentence, "31.4%"
+    assert_includes english(present(terms, on: Date.new(2025, 6, 1)).lines.first.sentence), "30.0%"
+    assert_includes english(present(terms, on: Date.new(2026, 6, 1)).lines.first.sentence), "31.4%"
   end
 
   def test_a_literal_rate_is_its_own_label
     line = present([ { base: "full_value", rate: "literal", literal_rate: "0.075" } ]).lines.first
 
-    assert_equal "7.5%", line.rate
-    assert_equal "7.5% on the whole balance", line.sentence
+    assert_equal "7.5%", english(line.rate)
+    assert_equal "7.5% on the whole balance", english(line.sentence)
   end
 
   # A rate someone typed by hand is a rate they meant, so it is not rounded to
@@ -53,15 +64,36 @@ class FormulaPresenterTest < Minitest::Test
   def test_an_unusual_literal_rate_is_not_rounded_away
     line = present([ { base: "full_value", rate: "literal", literal_rate: "0.0725" } ]).lines.first
 
-    assert_equal "7.25%", line.rate
+    assert_equal "7.25%", english(line.rate)
   end
 
-  def test_the_progressive_scale_is_named_rather_than_given_a_percentage
+  # The rules page describes a rule, not a household, so the one rate it cannot
+  # resolve even in principle is the household's own. Naming it is the whole
+  # answer here: a percentage in this column would be some *other* family's.
+  def test_the_household_rate_is_named_rather_than_given_a_percentage
+    line = present([ { base: "paid_in_deducted", rate: "household_rate" } ]).lines.first
+
+    assert line.household_rate?
+    assert_nil line.percent
+    assert_equal "your marginal rate on the deducted payments in", english(line.sentence)
+  end
+
+  # Unresolved and household-rate both come out without a number, and the page
+  # treats them differently -- one is a gap, the other is the correct rendering
+  # -- so the two flags must not collapse into each other.
+  def test_the_household_rate_is_not_an_unresolved_rate
+    line = present([ { base: "paid_in_deducted", rate: "household_rate" } ]).lines.first
+
+    refute line.unresolved?
+  end
+
+  # A rule saved before the barème came out. It reads back under the new name,
+  # so the page describes what will actually run rather than what was typed.
+  def test_a_rule_stored_under_the_old_name_renders_as_the_household_rate
     line = present([ { base: "paid_in_deducted", rate: "progressive" } ]).lines.first
 
-    assert line.progressive?
-    assert_nil line.percent
-    assert_equal "the progressive income-tax scale on the deducted payments in", line.sentence
+    assert line.household_rate?
+    assert_equal "your marginal rate on the deducted payments in", english(line.sentence)
   end
 
   # The settings page renders formulas for countries this module ships no rate
@@ -71,7 +103,7 @@ class FormulaPresenterTest < Minitest::Test
     line = present([ { base: "gain_over_paid_in", rate: "social_charges" } ], rates: nil).lines.first
 
     assert line.unresolved?
-    assert_equal "the gain over what was paid in at the social charges rate", line.sentence
+    assert_equal "the gain over what was paid in at the social charges rate", english(line.sentence)
   end
 
   # Same tolerance for a date the shipped file does not reach back to.
@@ -80,7 +112,7 @@ class FormulaPresenterTest < Minitest::Test
                    on: Date.new(1990, 1, 1)).lines.first
 
     assert line.unresolved?
-    assert_includes line.sentence, "social charges"
+    assert_includes english(line.sentence), "social charges"
   end
 
   # -- the clock -----------------------------------------------------------
@@ -95,9 +127,9 @@ class FormulaPresenterTest < Minitest::Test
     ).lines
 
     assert_equal "18.6% social charges on the gain over what was paid in, " \
-                 "once the account is 5 years old", lines[0].sentence
+                 "once the account is 5 years old", english(lines[0].sentence)
     assert_equal "31.4% flat tax on the gain over what was paid in, " \
-                 "while the account is under 5 years old", lines[1].sentence
+                 "while the account is under 5 years old", english(lines[1].sentence)
   end
 
   # The failure this guards against is subtle and would be invisible: the page
@@ -110,7 +142,7 @@ class FormulaPresenterTest < Minitest::Test
     )
 
     assert_equal 5, presenter.maturity_years
-    assert_includes presenter.lines.first.sentence, "once the account is 5 years old"
+    assert_includes english(presenter.lines.first.sentence), "once the account is 5 years old"
   end
 
   def test_with_no_product_the_declared_clock_stands
@@ -130,7 +162,8 @@ class FormulaPresenterTest < Minitest::Test
         opened_from: "2013-01-01", opened_until: "2017-12-31" }
     ]).lines.first
 
-    assert_equal "for accounts opened between 1 January 2013 and 31 December 2017", line.window
+    assert_equal "for accounts opened between 1 January 2013 and 31 December 2017",
+                 english(line.window)
   end
 
   def test_a_half_open_window_says_only_the_bound_it_has
@@ -141,8 +174,8 @@ class FormulaPresenterTest < Minitest::Test
       { base: "full_value", rate: "flat_tax", opened_until: "2017-09-26" }
     ]).lines.first
 
-    assert_equal "for accounts opened on or after 1 January 2018", from.window
-    assert_equal "for accounts opened on or before 26 September 2017", till.window
+    assert_equal "for accounts opened on or after 1 January 2018", english(from.window)
+    assert_equal "for accounts opened on or before 26 September 2017", english(till.window)
   end
 
   # Both narrowings on one term, which is the case the two-gate design exists
@@ -157,7 +190,7 @@ class FormulaPresenterTest < Minitest::Test
     assert_equal "18.6% social charges on the gain over what was paid in, " \
                  "once the account is 5 years old, " \
                  "for accounts opened between 1 January 2013 and 31 December 2017",
-                 line.sentence
+                 english(line.sentence)
   end
 
   # -- the whole formula ---------------------------------------------------
@@ -167,13 +200,34 @@ class FormulaPresenterTest < Minitest::Test
   # whether the rule matches their contract.
   def test_a_two_stream_rule_reads_as_one_sentence
     presenter = present([
-      { base: "paid_in_deducted", rate: "progressive" },
+      { base: "paid_in_deducted", rate: "household_rate" },
       { base: "gain_over_paid_in", rate: "flat_tax" }
     ])
 
-    assert_equal "Tax is the progressive income-tax scale on the deducted payments in " \
+    assert_equal "Tax is your marginal rate on the deducted payments in " \
                  "and 31.4% flat tax on the gain over what was paid in.",
-                 presenter.headline
+                 english(presenter.headline)
+    assert presenter.uses_household_rate?
+  end
+
+  # The elected-barème twin, where both streams take the household's rate. The
+  # sentence has to make the difference from the rule above legible at a
+  # glance, since choosing between the two is the whole decision.
+  def test_the_elected_variant_reads_as_the_household_rate_on_both_streams
+    presenter = Tax::FormulaPresenter.new(
+      Tax::Rules::Fr::CapitalAndGainsAtHouseholdRate.formula, rates: rates, on: ON
+    )
+
+    assert_equal "Tax is your marginal rate on the deducted payments in " \
+                 "and your marginal rate on the gain over what was paid in.",
+                 english(presenter.headline)
+  end
+
+  # A rule that never touches the household's rate must not say it does, or the
+  # flag stops meaning anything and the report's disclosure line goes on every
+  # account.
+  def test_a_rule_on_published_rates_alone_says_it_uses_no_household_rate
+    refute present([ { base: "gain_over_paid_in", rate: "flat_tax" } ]).uses_household_rate?
   end
 
   # "No terms" and "no rule" both produce an empty table, and only one of them
@@ -182,7 +236,7 @@ class FormulaPresenterTest < Minitest::Test
     presenter = present([])
 
     assert presenter.empty?
-    assert_equal "Nothing is taxed when this account is liquidated.", presenter.headline
+    assert_equal "Nothing is taxed when this account is liquidated.", english(presenter.headline)
   end
 
   def test_the_facts_a_rule_needs_are_listed_in_the_words_the_refusal_uses
@@ -192,7 +246,7 @@ class FormulaPresenterTest < Minitest::Test
     ])
 
     assert_equal "Needs the cost basis of what is held, the total paid in " \
-                 "and the date the account was opened.", presenter.needs_sentence
+                 "and the date the account was opened.", english(presenter.needs_sentence)
   end
 
   def test_notes_are_carried_through_untouched
@@ -223,12 +277,18 @@ class FormulaPresenterTest < Minitest::Test
 
       presenter = Tax::FormulaPresenter.new(formula, rates: rates, on: ON)
       assert presenter.valid?, "#{kind}: #{presenter.errors.inspect}"
-      refute_empty presenter.headline, "#{kind} renders an empty headline"
+      refute_empty english(presenter.headline), "#{kind} renders an empty headline"
 
       presenter.lines.each do |line|
-        refute_empty line.sentence, "#{kind} renders an empty line"
-        refute_match(/\b(gain_over|paid_in|full_value|flat_tax|social_charges)\b/, line.sentence,
-                     "#{kind} leaks a vocabulary key into its sentence: #{line.sentence}")
+        sentence = english(line.sentence)
+
+        refute_empty sentence, "#{kind} renders an empty line"
+        # The failure mode a keyed scheme makes newly possible: a term whose
+        # base or rate has no entry in Tax::Vocabulary renders as its own
+        # identifier, which looks like a sentence to a passing glance and is
+        # unreadable to the person it is addressed to.
+        refute_match(/\b(gain_over|paid_in|full_value|flat_tax|social_charges)\b/, sentence,
+                     "#{kind} leaks a vocabulary key into its sentence: #{sentence}")
       end
     end
   end
@@ -241,6 +301,6 @@ class FormulaPresenterTest < Minitest::Test
     assert_equal "Tax is 18.6% social charges on the gain over what was paid in, " \
                  "once the account is 5 years old and 31.4% flat tax on the gain " \
                  "over what was paid in, while the account is under 5 years old.",
-                 presenter.headline
+                 english(presenter.headline)
   end
 end

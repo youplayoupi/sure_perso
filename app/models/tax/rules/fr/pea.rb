@@ -34,9 +34,8 @@ module Tax
           if subject.paid_in.nil?
             return refuse(
               subject,
-              reason: "PEA tax is levied on the gain net, which is the current value " \
-                      "minus the total paid in. Sure does not store the amount paid in.",
-              needs: "the total paid in (versements)",
+              reason: msg("fr_pea.no_paid_in"),
+              needs: msg("facts.paid_in"),
               extra_warnings: cost_basis_footnote(subject)
             )
           end
@@ -50,45 +49,43 @@ module Tax
 
           loss = subject.loss_against(subject.paid_in)
           if loss.positive?
-            warnings << "Value is #{loss.to_s('F')} below the amount paid in. A loss is " \
-                        "not taxed. A realised loss on closing the plan may be " \
-                        "offsettable, which is not modelled."
+            warnings << msg("fr_pea.loss", loss: amount(loss))
           end
 
           age = subject.age_years_at(on)
           if age.nil?
             mature = true
-            warnings << "The opening date is not declared, so the #{maturity}-year clock " \
-                        "cannot be checked. Assuming the plan is mature. If it is not, " \
-                        "the tax would be #{cents(gain_net * pfu).to_s('F')} instead of " \
-                        "#{cents(gain_net * social).to_s('F')}."
+            warnings << msg("fr_pea.no_opening_date",
+                            maturity: maturity,
+                            mature_tax: amount(cents(gain_net * social)),
+                            immature_tax: amount(cents(gain_net * pfu)))
           else
             mature = age >= maturity
             unless mature
-              warnings << "The plan is #{age.round(1)} years old, under #{maturity}. Any " \
-                          "withdrawal closes it and the whole gain takes the full rate."
+              warnings << msg("fr_pea.immature",
+                              age: age.round(1),
+                              maturity: maturity)
             end
           end
 
           rate  = mature ? social : pfu
           basis = if mature
-            format("social charges %.1f%% on the gain net (plan mature, income tax exempt)", social * 100)
+            msg("fr_pea.basis_mature", rate: percent(social))
           else
-            format("flat tax %.1f%% on the gain net (plan under %d years)", pfu * 100, maturity)
+            msg("fr_pea.basis_immature", rate: percent(pfu), maturity: maturity)
           end
 
           # The ceiling is on money paid in, never on current value. A plan
           # worth more than the ceiling is the normal outcome of it working.
           ceiling = rates.ceiling(product)
           if ceiling && subject.paid_in > ceiling
-            warnings << "Payments in of #{subject.paid_in.to_s('F')} exceed the " \
-                        "#{ceiling.to_i} ceiling for this plan."
+            warnings << msg("fr_pea.exceeds_ceiling",
+                            paid_in: amount(subject.paid_in),
+                            ceiling: ceiling.to_i)
           end
 
           if subject.opened_on && TAUX_HISTORIQUES_WINDOW.cover?(subject.opened_on)
-            warnings << "Opened between 2013 and 2017, so part of the gain may qualify " \
-                        "for the social-charge rates in force when it accrued. Not " \
-                        "modelled, so the tax here may be overstated."
+            warnings << msg("fr_pea.taux_historiques")
           end
 
           result(

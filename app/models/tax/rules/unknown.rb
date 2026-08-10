@@ -16,27 +16,24 @@ module Tax
 
       def call(subject, on:, rates:, assumptions:)
         warnings = [
-          "No tax rule for #{describe(subject)}. Gross is reported; the tax is " \
-          "unknown and is excluded from the total."
+          msg("unknown.no_rule", description: describe(subject))
         ]
 
         if subject.tax_treatment
           suggestion = Treatment.suggested_rule_id(subject.tax_treatment)
-          warnings << "Sure classifies it as #{Treatment.label(subject.tax_treatment)}. " \
-                      "That is a classification, not a rate, so it cannot produce a " \
-                      "figure on its own" +
-                      (suggestion ? " -- but it suggests the '#{suggestion}' rule would fit." : ".")
+          suggestion_msg = suggestion ? msg("unknown.suggestion", rule: suggestion) : ""
+          warnings << msg("unknown.treatment_is_classification",
+                          treatment: Treatment.label(subject.tax_treatment),
+                          suggestion: suggestion_msg)
         end
 
-        warnings << "If this product was added in a newer version of Sure, it needs a " \
-                    "rule. One can be attached to it as a custom rule without changing " \
-                    "any code."
+        warnings << msg("unknown.needs_custom_rule")
 
         result(
           subject,
           taxable_base: nil,
           tax: nil,
-          basis: "not modelled",
+          basis: msg("base.cannot_be_computed"),
           warnings: warnings,
           modelled: false
         )

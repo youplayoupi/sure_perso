@@ -43,15 +43,38 @@ class Settings::TaxRatesControllerTest < ActionDispatch::IntegrationTest
                     "the raw fraction reached the page, which is not what a rate is called"
   end
 
-  test "the whole progressive scale is editable, including its open-ended top band" do
+  # The page is assembled from the country file, not from a list of France's
+  # rates held in a view. That is the whole of what makes a second country a
+  # YAML file, and it is only true if it is true for every section the file
+  # happens to carry -- including one added next year that nobody thought to
+  # come back and draw a box for.
+  test "every dated section of the country file gets its own editable rows" do
     get settings_taxes_rates_path
 
-    upto = css_select("input[name='tax_rates[income_tax_brackets][1][brackets][4][upto]']").first
-    rate = css_select("input[name='tax_rates[income_tax_brackets][1][brackets][4][rate]']").first
+    sections = Tax::RateOverlay.dated_sections(Tax.rate_data("FR"))
+    assert_operator sections.length, :>=, 2,
+                    "the shipped file has one section; this test would prove nothing"
 
-    assert upto, "the top band has no threshold field"
-    assert_nil upto["value"].presence, "the top band must stay open-ended, so its threshold is empty"
-    assert_equal "45", rate["value"]
+    sections.each do |section|
+      shipped = Tax.rate_data("FR")[section]
+
+      assert_equal shipped.length, field_values(section, "rate").length,
+                   "#{section} did not reach the page with a row per dated entry"
+      assert_equal shipped.map { |e| e["effective_from"].to_s },
+                   field_values(section, "effective_from"),
+                   "#{section} lost or reordered its dates on the way to the page"
+    end
+  end
+
+  # A rate the file declares as a sum of others is shown and not offered for
+  # correction. A box here would be a second place to change the same number,
+  # and the two would disagree the first time anyone used one of them.
+  test "a composite is shown without being editable" do
+    get settings_taxes_rates_path
+
+    assert_includes body_text, I18n.t("settings.tax_rates.sections.flat_tax")
+    assert_empty css_select("input[name^='tax_rates[flat_tax]']"),
+                 "the derived total was given a box of its own"
   end
 
   test "product figures are offered for correction" do
@@ -64,9 +87,12 @@ class Settings::TaxRatesControllerTest < ActionDispatch::IntegrationTest
   test "the page speaks the interface language, not the rate file's key names" do
     get settings_taxes_rates_path
 
-    assert_includes response.body, I18n.t("settings.tax_rates.sections.social_charges")
-    refute_includes body_text, "flat_tax_income_component"
-    refute_includes body_text, "income_tax_brackets"
+    Tax::RateOverlay.dated_sections(Tax.rate_data("FR")).each do |section|
+      assert_includes body_text, I18n.t("settings.tax_rates.sections.#{section}"),
+                      "#{section} has no name in the interface language"
+      refute_includes body_text, section,
+                      "#{section} reached the page as its key in the file"
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -115,17 +141,33 @@ class Settings::TaxRatesControllerTest < ActionDispatch::IntegrationTest
                  Tax.rate_table_for(@family, "FR").social_charges(Date.new(2026, 6, 1))
   end
 
-  test "a bracket threshold can be moved, and the rest of the scale survives it" do
-    page = submitted_from_page
-    page["income_tax_brackets"]["1"]["brackets"]["1"]["upto"] = "30000"
-    patch settings_taxes_rates_path, params: { tax_rates: page }
+  # Correcting through the screen has to behave the way the diff does: one
+  # section moves and the rest go on following the file. Asserted through the
+  # table the report computes from, and asserted for whichever other section
+  # the file happens to have rather than for a named one.
+  test "correcting one section leaves the others following the shipped file" do
+    other = Tax::RateOverlay.dated_sections(Tax.rate_data("FR")).find { |s| s != "social_charges" }
+    on = Date.new(2026, 6, 1)
+    shipped_other = Tax.rate_table("FR").rate(other, on)
 
-    brackets = Tax.rate_table_for(@family, "FR").brackets(Date.new(2026, 6, 1))
+    correct("social_charges", 1, "rate" => "20")
 
-    assert_equal 5, brackets.length, "moving one threshold dropped the rest of the scale"
-    assert_equal BigDecimal("30000"), brackets[1].first
-    assert_equal BigDecimal("84577"), brackets[2].first, "an untouched band changed"
-    assert_nil brackets.last.first, "the scale lost its open-ended top band"
+    table = Tax.rate_table_for(@family, "FR")
+
+    assert_equal BigDecimal("0.2"), table.rate("social_charges", on)
+    assert_equal shipped_other, table.rate(other, on), "#{other} moved with it"
+  end
+
+  # The derived total is the one figure on this page nobody can type, so the
+  # only way it can be wrong is by failing to follow its parts.
+  test "a composite follows the part that was corrected" do
+    correct("social_charges", 1, "rate" => "20")
+
+    on = Date.new(2026, 6, 1)
+    table = Tax.rate_table_for(@family, "FR")
+
+    assert_equal table.rate("flat_tax_income_component", on) + BigDecimal("0.2"),
+                 table.rate("flat_tax", on)
   end
 
   test "a product ceiling can be corrected without dropping its maturity" do
@@ -182,14 +224,29 @@ class Settings::TaxRatesControllerTest < ActionDispatch::IntegrationTest
     assert_nil Tax::RateCorrection.find_by(family: @family, country: "FR")
   end
 
-  test "a scale with no open-ended top band is refused" do
+  test "a rate with no date it takes effect from is refused" do
     page = submitted_from_page
-    page["income_tax_brackets"]["1"]["brackets"]["4"]["upto"] = "250000"
+    page["social_charges"]["1"]["effective_from"] = ""
     patch settings_taxes_rates_path, params: { tax_rates: page }
 
     assert_response :unprocessable_entity
     assert_nil Tax::RateCorrection.find_by(family: @family, country: "FR"),
-               "a scale that would leave the highest incomes untaxed was stored"
+               "a rate with no date was stored, and no report could say when it applied"
+  end
+
+  # Clearing every row of a section stores nothing and the section goes on
+  # showing what the file ships, because the overlay merges and has no way to
+  # say "and drop that one". Tested at the screen because this is where
+  # somebody would try it, and the outcome is not what they intended: zero is
+  # how a household says a rate is no longer levied.
+  test "emptying a section leaves it following the file rather than deleting it" do
+    page = submitted_from_page
+    page["social_charges"].each_value { |row| row["rate"] = ""; row["effective_from"] = "" }
+    patch settings_taxes_rates_path, params: { tax_rates: page }
+
+    assert_nil Tax::RateCorrection.find_by(family: @family, country: "FR")
+    assert_equal BigDecimal("0.186"),
+                 Tax.rate_table_for(@family, "FR").social_charges(Date.new(2026, 6, 1))
   end
 
   # The refusal has to be readable, or the form is a dead end.

@@ -132,7 +132,7 @@ module Tax
         params: {
           "name" => "My PER",
           "terms" => [
-            { "base" => "paid_in_deducted", "rate" => "progressive" },
+            { "base" => "paid_in_deducted", "rate" => "household_rate" },
             { "base" => "gain_over_paid_in", "rate" => "flat_tax" }
           ]
         }
@@ -142,6 +142,24 @@ module Tax
       assert rule.composed?
       assert_instance_of Rules::Composed, rule.to_rule
       assert_equal 2, rule.formula.terms.length
+    end
+
+    # A rule saved before the income-tax scale was replaced by a declared
+    # marginal rate. Refusing it on upgrade to make a point about vocabulary
+    # would be the module failing at its actual job: the arithmetic the
+    # household asked for is the arithmetic they now get, under the new name.
+    test "a rule stored under the old rate name still validates and reads as the new one" do
+      rule = CustomRule.new(
+        family: @family, accountable_type: "Investment", subtype: "per",
+        kind: "composed",
+        params: {
+          "name" => "My PER",
+          "terms" => [ { "base" => "paid_in_deducted", "rate" => "progressive" } ]
+        }
+      )
+
+      assert rule.valid?, rule.errors.full_messages.inspect
+      assert_equal "household_rate", rule.formula.terms.first.rate
     end
 
     test "a composed rule with arithmetic that does not add up is rejected at save time" do
@@ -239,6 +257,98 @@ module Tax
 
       assert_equal 8, Tax.rate_table_for(@family, "FR").maturity_years("pea")
       assert_equal [ "products" ], RateCorrection.for(@family, "FR").edited_sections
+    end
+  end
+
+  # -------------------------------------------------------------------------
+
+  # The fourth table, and the only one that stores something about the people
+  # rather than about their accounts.
+  #
+  # The controller test covers the form; what is here is the contract the rest
+  # of the module reads it through, which is two class methods and a predicate.
+  # `marginal_rate_for` is the one that matters: it is called on every report,
+  # for families that have never opened the tax settings at all, and its nil is
+  # load-bearing -- it is what makes the report label its own total provisional
+  # instead of quietly computing against a placeholder.
+  class HouseholdTest < ActiveSupport::TestCase
+    setup { @family = families(:dylan_family) }
+
+    test "a household that has said nothing has no rate, and saying so is not an error" do
+      assert_nil Household.marginal_rate_for(@family)
+      assert_not Household.for(@family).declared?
+      assert_not Household.for(@family).persisted?
+    end
+
+    test "a declared rate is what the engine is handed" do
+      Household.create!(family: @family, marginal_rate: BigDecimal("0.41"))
+
+      assert_equal BigDecimal("0.41"), Household.marginal_rate_for(@family)
+    end
+
+    # Reports are rendered for whoever is signed in, and `Current.family` is
+    # nil in more places than one would like -- a background job, a session
+    # that expired mid-request. Raising here would turn a missing session into
+    # a 500 on a page whose whole job is to degrade gracefully.
+    test "no family at all is undeclared rather than an exception" do
+      assert_nil Household.marginal_rate_for(nil)
+    end
+
+    test "one row per family" do
+      Household.create!(family: @family, marginal_rate: BigDecimal("0.30"))
+      duplicate = Household.new(family: @family, marginal_rate: BigDecimal("0.41"))
+
+      assert_not duplicate.valid?
+      assert_includes duplicate.errors[:family_id], "has already been taken"
+    end
+
+    test "for returns the existing row rather than a second one" do
+      row = Household.create!(family: @family, marginal_rate: BigDecimal("0.30"))
+
+      assert_equal row, Household.for(@family)
+    end
+
+    # The column holds a fraction, so the range is the range. This is the last
+    # guard before a rate multiplies a whole PER withdrawal, and it is worth
+    # having at the model rather than only at the form because the form is not
+    # the only thing that writes here -- a console, a future import, an upgrade
+    # script.
+    test "a rate outside nought to one is refused" do
+      assert_not Household.new(family: @family, marginal_rate: BigDecimal("1.3")).valid?
+      assert_not Household.new(family: @family, marginal_rate: BigDecimal("-0.05")).valid?
+    end
+
+    test "the boundaries are inside the range" do
+      assert Household.new(family: @family, marginal_rate: BigDecimal("0")).valid?
+      assert Household.new(family: @family, marginal_rate: BigDecimal("1")).valid?
+    end
+
+    # Nil is a legitimate stored state as far as the column is concerned, and
+    # it has to be, because `for` builds an unsaved row with no rate on it
+    # every time the settings page renders for a household that has not
+    # declared one.
+    test "no rate is a valid row, and it is not a declaration" do
+      row = Household.new(family: @family)
+
+      assert row.valid?
+      assert_not row.declared?
+    end
+
+    # Zero is a rate someone can genuinely be on, and it is not the same
+    # statement as saying nothing. The report treats the two differently -- one
+    # is an answer, the other is a caveat -- so the predicate must too.
+    test "a zero rate is a declaration" do
+      assert Household.new(family: @family, marginal_rate: BigDecimal("0")).declared?
+    end
+
+    test "a household goes when its family does" do
+      family = families(:empty)
+      Household.create!(family: family, marginal_rate: BigDecimal("0.30"))
+
+      family.destroy
+
+      assert_nil Household.find_by(family_id: family.id),
+                 "the row outlived the family it describes"
     end
   end
 

@@ -30,6 +30,8 @@ module TaxEngineTestHelper
   ENGINE = %w[
     tax
     tax/vocabulary
+    tax/messages
+    tax/message
     tax/rate_table
     tax/rate_overlay
     tax/rate_edit
@@ -48,6 +50,7 @@ module TaxEngineTestHelper
     tax/rules/fr/securities
     tax/rules/fr/deposit
     tax/rules/fr/capital_and_gains
+    tax/rules/fr/capital_and_gains_at_household_rate
     tax/catalogue
     tax/registry
     tax/snapshot

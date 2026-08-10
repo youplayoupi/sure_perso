@@ -82,35 +82,62 @@ def emit(label, line)
 
   puts [
     label, format("%.2f", line.gross), base, tax,
-    format("%.2f", line.bareme_income)
+    format("%.2f", line.household_rate_income)
   ].join("\t")
 end
 
-flat   = Tax::Assumptions.new(tmi_mode: :flat, flat_rate: d("0.30"))
-bareme = Tax::Assumptions.new(tmi_mode: :bareme, other_taxable_income: d(0), parts: d(1))
+# Three households rather than two tax modes.
+#
+# The columns used to be "flat" and "bareme", which were two ways of arriving
+# at a marginal rate; now the household simply states one, so what varies is
+# the rate itself. Three of them, chosen either side of the flat tax: 11% is
+# where electing the progressive scale wins, 41% is where it loses, and 30% is
+# near enough the flat tax that a rule confusing the two would still balance --
+# which is why it is here as a control and not on its own.
+HOUSEHOLDS = {
+  "at11" => d("0.11"),
+  "at30" => d("0.30"),
+  "at41" => d("0.41")
+}.freeze
 
 subjects = CASES.map { |c| subject_for(*c) } + [ cto_subject ]
 
-{ "flat" => flat, "bareme" => bareme }.each do |mode, assumptions|
+HOUSEHOLDS.each do |label, rate|
+  assumptions = Tax::Assumptions.new(marginal_rate: rate)
+
   subjects.each do |s|
-    emit("#{mode}\t#{s.name}", REGISTRY.apply(s, on: ON, rates: RATES, assumptions: assumptions))
+    emit("#{label}\t#{s.name}", REGISTRY.apply(s, on: ON, rates: RATES, assumptions: assumptions))
   end
 end
 
-stack = CASES.select { |c| %w[per_1 per_2].include?(c[0]) }.map { |c| subject_for(*c) }
-REGISTRY.apply_all(stack, on: ON, rates: RATES, assumptions: bareme).each do |line|
-  emit("stacked\t#{line.account_name}", line)
+# An undeclared rate is its own row rather than a fourth household, because
+# what is being checked is not a number but that the module still computes one
+# and still says the number is a placeholder. The Python side has no counterpart
+# for the caveat, so only the arithmetic is diffed.
+undeclared = Tax::Assumptions.new(marginal_rate: nil)
+subjects.each do |s|
+  emit("undeclared\t#{s.name}", REGISTRY.apply(s, on: ON, rates: RATES, assumptions: undeclared))
 end
 
+# The property the stacking loop used to exist for, now asserted rather than
+# implemented: a portfolio taxed together comes to what its accounts come to
+# taxed apart. Emitted so the diff would catch a reintroduction.
+pair = CASES.select { |c| %w[per_1 per_2].include?(c[0]) }.map { |c| subject_for(*c) }
+at30 = Tax::Assumptions.new(marginal_rate: d("0.30"))
+REGISTRY.apply_all(pair, on: ON, rates: RATES, assumptions: at30).each do |line|
+  emit("together\t#{line.account_name}", line)
+end
+
+# Every rate the country file publishes, at both sides of the 2026 change,
+# rather than the three France happens to have. A file that grows a section
+# starts appearing here on its own, which is the point of discovering the
+# sections rather than listing them.
 [ 2025, 2026 ].each do |year|
   on = Date.new(year, 6, 1)
-  puts "rates\tsocial_#{year}\t#{format('%.4f', RATES.social_charges(on))}"
-  puts "rates\tflat_#{year}\t#{format('%.4f', RATES.flat_tax(on))}"
 
-  [ 11_000, 30_000, 50_000, 120_000 ].each do |amount|
-    [ 1, 2 ].each do |parts|
-      tax = RATES.income_tax(d(amount), on: on, parts: d(parts))
-      puts "rates\tir_#{year}_#{amount}_p#{parts}\t#{format('%.2f', tax)}"
-    end
+  RATES.rate_names.sort.each do |name|
+    puts "rates\t#{name}_#{year}\t#{format('%.4f', RATES.rate(name, on))}"
+  rescue Tax::Error => e
+    puts "rates\t#{name}_#{year}\tnil (#{e.class})"
   end
 end

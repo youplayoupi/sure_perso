@@ -98,7 +98,7 @@
                       <%= [ r.accountable_type, r.subtype ].compact.join(" / ") %>
                     </p>
                   </td>
-                  <td class="px-4 py-3 text-secondary"><%= r.basis %></td>
+                  <td class="px-4 py-3 text-secondary"><%= tax_message(r.basis) %></td>
                   <td class="px-4 py-3 text-right tabular-nums privacy-sensitive"><%= tax_money(r.gross, r.currency) %></td>
                   <td class="px-4 py-3 text-right tabular-nums privacy-sensitive"><%= tax_money(r.taxable_base, r.currency) %></td>
                   <td class="px-4 py-3 text-right tabular-nums privacy-sensitive"><%= tax_money(r.tax, r.currency) %></td>
@@ -123,7 +123,7 @@
                     <td colspan="7" class="px-4 pb-3 -mt-1">
                       <ul class="text-xs text-secondary space-y-1 list-disc list-inside">
                         <% r.warnings.each do |w| %>
-                          <li><%= w %></li>
+                          <li><%= tax_message(w) %></li>
                         <% end %>
                       </ul>
                     </td>
@@ -225,14 +225,21 @@
         <p class="text-sm text-secondary"><%= t(".assumptions_body") %></p>
         <ul class="text-sm text-secondary space-y-1 list-disc list-inside">
           <li><%= t(".assumption_liquidation", date: format_date(@valuation_date, :long)) %></li>
+          <%# Two sentences rather than one with a number in it, because a rate
+              the household stated and a rate the module picked in the absence
+              of one are not the same kind of fact and should not read as
+              though they were. The second links to the page that turns one
+              into the other. %>
           <li>
-            <% if @assumptions.bareme? %>
-              <%= t(".assumption_income_bareme",
-                    income: tax_money(@assumptions.other_taxable_income, @currency),
-                    parts: @assumptions.parts.to_i) %>
+            <% if @assumptions.marginal_rate_declared? %>
+              <%= t(".assumption_marginal_rate",
+                    rate: tax_percent(@assumptions.marginal_rate, precision: 1)) %>
             <% else %>
-              <%= t(".assumption_income_flat",
-                    rate: tax_percent(@assumptions.flat_rate, precision: 0)) %>
+              <%= t(".assumption_marginal_rate_undeclared_html",
+                    rate: tax_percent(@assumptions.marginal_rate, precision: 0),
+                    link: link_to(t(".assumption_marginal_rate_link"),
+                                  settings_taxes_path,
+                                  class: "text-link hover:underline")) %>
             <% end %>
           </li>
           <li><%= t(".assumption_rates_html", file: "config/tax/#{@country.downcase}.yml") %></li>

@@ -107,18 +107,55 @@ module Tax
       assert_equal before, base["social_charges"].map { |e| e["rate"] }
     end
 
-    def test_income_tax_brackets_can_be_corrected_wholesale
-      merged = table(
-        "income_tax_brackets" => [
-          {
-            "effective_from" => "2026-01-01",
-            "brackets" => [ { "upto" => 10_000, "rate" => 0.0 }, { "upto" => nil, "rate" => 0.50 } ]
-          }
-        ]
+    # Every section of the shipped file is correctable, discovered by shape
+    # rather than by name. This is the whole of what makes a second country a
+    # YAML file: nothing in the overlay, the form or the validator has to learn
+    # that a country calls one of its rates `social_charges`.
+    def test_every_dated_section_of_the_shipped_file_can_be_corrected
+      Tax::RateOverlay.dated_sections(shipped).each do |section|
+        merged = table(section => [ { "effective_from" => "2026-01-01", "rate" => 0.42 } ])
+
+        assert_equal BigDecimal("0.42"), merged.rate(section, ON_2026),
+                     "#{section} did not take a correction"
+      end
+    end
+
+    # A section a country invents behaves like one France happens to have. The
+    # file is the authority on what rates exist, so a name this module has
+    # never seen has to merge, validate and resolve on the same path.
+    def test_a_section_this_module_has_never_heard_of_merges_like_any_other
+      invented = shipped.merge(
+        "regional_surcharge" => [ { "effective_from" => "2020-01-01", "rate" => 0.03 } ]
+      )
+      merged = Tax::RateTable.new(
+        Tax::RateOverlay.apply(
+          invented, "regional_surcharge" => [ { "effective_from" => "2026-01-01", "rate" => 0.05 } ]
+        )
       )
 
-      # 30k taxable, one part: first 10k free, 20k at 50%.
-      assert_equal BigDecimal("10000"), merged.income_tax(BigDecimal("30000"), on: ON_2026)
+      assert_includes Tax::RateOverlay.dated_sections(invented), "regional_surcharge"
+      assert_equal BigDecimal("0.03"), merged.rate("regional_surcharge", ON_2025)
+      assert_equal BigDecimal("0.05"), merged.rate("regional_surcharge", ON_2026)
+    end
+
+    # The identity keys and the derived ones are not rate schedules and must
+    # not be offered as correctable, or the form would draw a date-and-rate
+    # table over the country code.
+    def test_the_non_rate_keys_are_not_mistaken_for_sections
+      sections = Tax::RateOverlay.dated_sections(shipped)
+
+      refute_includes sections, "products"
+      refute_includes sections, "composites"
+      refute_includes sections, "country"
+      refute_includes sections, "currency"
+    end
+
+    # The composite is computed from its parts, so it is a rate the table can
+    # resolve but not a section anyone can edit. Correcting a total whose parts
+    # disagree with it is a contradiction the file should not be able to hold.
+    def test_a_composite_is_a_rate_but_not_an_editable_section
+      refute_includes Tax::RateOverlay.dated_sections(shipped), "flat_tax"
+      assert_includes Tax::RateTable.new(shipped).rate_names, "flat_tax"
     end
   end
 
@@ -134,7 +171,7 @@ module Tax
       # 18.6 where 0.186 was meant. Without this the report would show a tax
       # bill eighteen times the balance and nothing downstream would object.
       errors = Tax::RateOverlay.errors(
-        "social_charges" => [ { "effective_from" => "2026-01-01", "rate" => 18.6 } ]
+        { "social_charges" => [ { "effective_from" => "2026-01-01", "rate" => 18.6 } ] }
       )
 
       assert_match(/not between 0 and 1/, errors.join)
@@ -142,14 +179,14 @@ module Tax
     end
 
     def test_an_entry_with_no_effective_date_is_rejected
-      errors = Tax::RateOverlay.errors("social_charges" => [ { "rate" => 0.2 } ])
+      errors = Tax::RateOverlay.errors({ "social_charges" => [ { "rate" => 0.2 } ] })
 
       assert_match(/no date it takes effect from/, errors.join)
     end
 
     def test_an_unparseable_effective_date_is_rejected
       errors = Tax::RateOverlay.errors(
-        "social_charges" => [ { "effective_from" => "soon", "rate" => 0.2 } ]
+        { "social_charges" => [ { "effective_from" => "soon", "rate" => 0.2 } ] }
       )
 
       assert_match(/is not a date/, errors.join)
@@ -158,29 +195,49 @@ module Tax
     def test_a_misspelled_section_is_reported_rather_than_silently_ignored
       # Merging it would do nothing while looking saved, which is the failure
       # mode where someone believes a correction is in force and it is not.
-      errors = Tax::RateOverlay.errors("social_charge" => [])
+      errors = Tax::RateOverlay.errors(
+        { "social_charge" => [] }, known_sections: Tax::RateOverlay.dated_sections(shipped)
+      )
 
       assert_match(/is not a section of the rate file/, errors.join)
     end
 
-    def test_brackets_without_an_open_ended_top_are_rejected
+    # Without the shipped file to check against, a name cannot be judged: this
+    # module does not know what rates a country publishes, and refusing an
+    # unfamiliar one would be refusing every country but France. The shape is
+    # still checked. Every caller inside the app passes the sections, so the
+    # strict branch above is the one that runs in practice.
+    def test_an_unfamiliar_section_is_taken_on_trust_when_no_file_is_given
+      assert_empty Tax::RateOverlay.errors(
+        { "regional_surcharge" => [ { "effective_from" => "2026-01-01", "rate" => 0.03 } ] }
+      )
+    end
+
+    def test_the_message_names_the_sections_that_would_have_worked
       errors = Tax::RateOverlay.errors(
-        "income_tax_brackets" => [
-          { "effective_from" => "2026-01-01", "brackets" => [ { "upto" => 10_000, "rate" => 0.1 } ] }
-        ]
+        { "social_charge" => [] }, known_sections: Tax::RateOverlay.dated_sections(shipped)
       )
 
-      assert_match(/no final open-ended bracket/, errors.join)
+      assert_match(/social_charges/, errors.join)
+    end
+
+    # `products` is not a rate section and is never in `dated_sections`, so a
+    # caller passing that list has to still be able to correct a ceiling.
+    def test_products_survives_the_section_check
+      assert_empty Tax::RateOverlay.errors(
+        { "products" => { "pea" => { "maturity_years" => 8 } } },
+        known_sections: Tax::RateOverlay.dated_sections(shipped)
+      )
     end
 
     def test_an_implausible_maturity_is_rejected
-      errors = Tax::RateOverlay.errors("products" => { "pea" => { "maturity_years" => 500 } })
+      errors = Tax::RateOverlay.errors({ "products" => { "pea" => { "maturity_years" => 500 } } })
 
       assert_match(/not plausible/, errors.join)
     end
 
     def test_a_product_key_the_module_does_not_read_is_reported
-      errors = Tax::RateOverlay.errors("products" => { "pea" => { "colour" => "blue" } })
+      errors = Tax::RateOverlay.errors({ "products" => { "pea" => { "colour" => "blue" } } })
 
       assert_match(/is not a value this module reads/, errors.join)
     end
@@ -189,8 +246,10 @@ module Tax
       # One save should show the author everything wrong with the form, not
       # make them find the problems one round trip at a time.
       errors = Tax::RateOverlay.errors(
-        "social_charges" => [ { "effective_from" => "2026-01-01", "rate" => 50 } ],
-        "products" => { "pea" => { "maturity_years" => -1, "colour" => "blue" } }
+        {
+          "social_charges" => [ { "effective_from" => "2026-01-01", "rate" => 50 } ],
+          "products" => { "pea" => { "maturity_years" => -1, "colour" => "blue" } }
+        }
       )
 
       assert_operator errors.length, :>=, 2

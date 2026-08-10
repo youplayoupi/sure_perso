@@ -31,10 +31,8 @@ module Tax
           if base.nil?
             return refuse(
               subject,
-              reason: "The capital gain is the current value minus the acquisition " \
-                      "cost of the securities, and no cost basis is recorded on the " \
-                      "holdings in this account.",
-              needs: "the acquisition cost"
+              reason: msg("fr_securities.no_cost_basis"),
+              needs: msg("facts.acquisition_cost")
             )
           end
 
@@ -43,28 +41,20 @@ module Tax
           pfu  = rates.flat_tax(on)
 
           loss = subject.loss_against(base)
-          if loss.positive?
-            warnings << "Latent loss of #{loss.to_s('F')}. Realised losses offset gains " \
-                        "for ten years, which is not modelled."
-          end
+          warnings << msg("fr_securities.latent_loss", loss: amount(loss)) if loss.positive?
 
-          if source == :declared
-            warnings << "Using the declared figure as the acquisition cost. For a " \
-                        "securities account the correct base is what the holdings cost, " \
-                        "not the cash paid into the account -- check the declared value " \
-                        "is the former."
-          end
+          warnings << msg("fr_securities.declared_cost") if source == :declared
 
-          warnings << format(
-            "The flat tax is assumed. Electing the progressive scale instead can beat " \
-            "it below roughly a %d%% effective rate and is not modelled.", (pfu * 100).to_i
-          )
+          # Whole percent here, unlike everywhere else: the sentence says
+          # "roughly", and a figure given to a tenth reads as a threshold
+          # somebody computed rather than as the rule of thumb it is.
+          warnings << msg("fr_securities.flat_tax_assumed", rate: percent(pfu, 0))
 
           result(
             subject,
             taxable_base: gain,
             tax: cents(gain * pfu),
-            basis: format("flat tax %.1f%% on the capital gain (cost %s)", pfu * 100, base.to_s("F")),
+            basis: msg("fr_securities.basis", rate: percent(pfu), cost: amount(base)),
             warnings: warnings
           )
         end

@@ -72,12 +72,24 @@ class TaxReportsController < ApplicationController
     # Everything the user asserts rather than observes. All of it is rendered
     # on the page, because a net figure without its assumptions is a number
     # without a meaning.
+    #
+    # The marginal rate is the one assumption that is not a URL parameter, and
+    # deliberately so. It used to be three of them -- a mode, a flat rate, the
+    # household's other income and its number of parts -- which defaulted to
+    # zero other income and one part, so unless somebody hand-edited the query
+    # string every large withdrawal was taxed as though it were the household's
+    # only income for the year. That is a wrong answer arrived at confidently,
+    # which is the one output this module exists to refuse. It is now a stored
+    # fact the household states once, under Taxes, and nil until they do --
+    # see Tax::Assumptions#marginal_rate_caveat for what the report says in the
+    # meantime.
+    #
+    # The projection knobs stay in the URL because they are a question being
+    # asked ("what if I hold for thirty years?"), not a fact being declared,
+    # and a question should be shareable and shouldn't outlive the tab.
     def assumptions_from_params
       Tax::Assumptions.new(
-        tmi_mode: params[:tmi_mode] == "flat" ? :flat : :bareme,
-        flat_rate: decimal(params[:flat_rate], "0.30"),
-        other_taxable_income: decimal(params[:other_income], "0"),
-        parts: decimal(params[:parts], "1"),
+        marginal_rate: Tax::Household.marginal_rate_for(Current.family),
         expected_return: decimal(params[:expected_return], "0.05"),
         inflation: decimal(params[:inflation], "0.02"),
         horizon_years: params.fetch(:horizon, 20).to_i.clamp(0, 50)
@@ -93,9 +105,20 @@ class TaxReportsController < ApplicationController
     # Disagreements between Sure's own classification of an account and what
     # this module did with it. Usually empty; when it is not, it means one of
     # the two is wrong and the user is better placed than we are to say which.
+    #
+    # Paired on the account id rather than by position. `apply_all` sorts its
+    # input before taxing it -- so that the report does not depend on the order
+    # rows came back from the database -- which means results do not come back
+    # in the order the subjects went in. Zipping the two compared one account's
+    # classification against another account's tax and filed the resulting note
+    # under a third account's name. It stayed invisible because this list is
+    # empty for most portfolios: the pairing is only wrong where it has
+    # something to say.
     def audit_notes
-      @subjects.zip(@snapshot.results).flat_map do |subject, result|
-        Tax::Treatment.audit(subject, result).map { |note| [ subject.name, note ] }
+      results = @snapshot.results.index_by(&:account_id)
+
+      @subjects.flat_map do |subject|
+        Tax::Treatment.audit(subject, results[subject.id]).map { |note| [ subject.name, note ] }
       end
     end
 

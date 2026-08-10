@@ -19,7 +19,7 @@ fr:
       social_charges: prélèvements sociaux
       flat_tax: flat tax (PFU)
       flat_tax_income_component: part impôt sur le revenu du PFU
-      progressive: barème progressif de l'impôt sur le revenu
+      household_rate: votre taux marginal
       literal: un taux fixe que vous saisissez
   settings:
     tax_rules:
@@ -118,8 +118,8 @@ fr:
         terms_hint: >-
           Une ligne par chose imposée. Une enveloppe retraite sortie en capital
           en demande généralement deux : les versements que vous avez déduits de
-          votre revenu passent au barème, et la plus-value au-dessus prend le
-          PFU.
+          votre revenu sont imposés à votre taux marginal, et la plus-value
+          au-dessus prend le PFU.
         add_term: Ajouter un terme
         maturity_title: Durée de maturité, en années
         maturity_hint: >-

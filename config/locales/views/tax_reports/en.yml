@@ -58,11 +58,14 @@ en:
         None of this is observed. All of it is asserted, by you or by the
         defaults, and the numbers above are only as good as it is.
       assumption_liquidation: Everything is sold on %{date}, in one tax year.
-      assumption_income_bareme: >-
-        Income going to the progressive scale is taxed by stacking it on
-        %{income} of other income over %{parts} part(s).
-      assumption_income_flat: >-
-        Income going to the progressive scale is taxed at a flat %{rate}.
+      assumption_marginal_rate: >-
+        Anything taxed as income is taxed at your marginal rate of %{rate},
+        which you have set. A withdrawal large enough to push part of itself
+        into a higher band is not modelled.
+      assumption_marginal_rate_undeclared_html: >-
+        Anything taxed as income is taxed at %{rate}. That is a placeholder,
+        not your rate — you have not given one. %{link}
+      assumption_marginal_rate_link: Set your marginal rate
       assumption_rates_html: >-
         Rates are those in effect on the valuation date; see
         <code>%{file}</code>.

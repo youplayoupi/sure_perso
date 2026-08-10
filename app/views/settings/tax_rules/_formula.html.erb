@@ -13,7 +13,7 @@
 %>
 
 <div class="space-y-3">
-  <p class="text-sm text-primary max-w-prose"><%= presenter.headline %></p>
+  <p class="text-sm text-primary max-w-prose"><%= tax_message(presenter.headline) %></p>
 
   <% if presenter.lines.any? %>
     <div class="rounded-lg border border-secondary border-xs overflow-hidden">
@@ -28,10 +28,10 @@
         <tbody class="divide-y divide-alpha-black-100 theme-dark:divide-alpha-white-100">
           <% presenter.lines.each do |line| %>
             <tr>
-              <td class="px-3 py-2 text-primary align-top"><%= line.base %></td>
+              <td class="px-3 py-2 text-primary align-top"><%= tax_message(line.base) %></td>
               <td class="px-3 py-2 align-top">
                 <span class="<%= line.unresolved? ? "text-warning" : "text-primary" %>">
-                  <%= line.rate %>
+                  <%= tax_message(line.rate) %>
                 </span>
                 <%# A rate the table cannot resolve is named but not numbered.
                     Saying so on the row beats leaving a reader to wonder why
@@ -41,8 +41,7 @@
                 <% end %>
               </td>
               <td class="px-3 py-2 text-secondary align-top">
-                <% clauses = [ line.condition, line.window ].compact %>
-                <%= clauses.any? ? clauses.join(", ") : t("settings.tax_rules.formula.always") %>
+                <%= line.when_clause ? tax_message(line.when_clause) : t("settings.tax_rules.formula.always") %>
               </td>
             </tr>
           <% end %>
@@ -56,10 +55,10 @@
       it declines is always here -- before the rule is chosen rather than after
       the report has refused. %>
   <% if presenter.needs_sentence %>
-    <p class="text-xs text-subdued"><%= presenter.needs_sentence %></p>
+    <p class="text-xs text-subdued"><%= tax_message(presenter.needs_sentence) %></p>
   <% end %>
 
   <% presenter.notes.each do |note| %>
-    <p class="text-xs text-secondary max-w-prose"><%= note %></p>
+    <p class="text-xs text-secondary max-w-prose"><%= tax_message(note) %></p>
   <% end %>
 </div>

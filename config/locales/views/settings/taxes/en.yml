@@ -16,6 +16,21 @@ en:
     taxes:
       show:
         page_title: Taxes
+        household_title: Your marginal rate of income tax
+        household_subtitle: >-
+          The rate at which your next euro of income is taxed. Every rule that
+          taxes something as income uses it — the deducted payments coming out
+          of a PER above all. Read it off your last assessment; a rate that is
+          roughly right beats the placeholder by a wide margin.
+        household_rate_label: Marginal rate, as a percentage
+        household_save: Save
+        household_declared: >-
+          The report uses this figure. Clearing the box goes back to saying you
+          have not given one, which is not the same as saying it is zero.
+        household_undeclared: >-
+          You have not given one. The report still computes, using 30% in its
+          place, and says on every figure resting on it that the number is a
+          placeholder rather than your rate.
         rules_title: How each product is taxed
         rules_subtitle: >-
           One rule per product you hold, using %{country} rules. These are
@@ -25,7 +40,7 @@ en:
         coverage_summary: >-
           %{covered} of the %{total} products you hold have a rule.
         library_link: See what each rule does, or write your own
-        rates_link: Correct a rate, a scale or a ceiling
+        rates_link: Correct a rate or a ceiling
         no_products: >-
           No accounts the report can tax, so there is nothing to configure yet.
         other_title: Everything else Sure knows about
@@ -83,3 +98,14 @@ en:
           saved.
       destroy:
         unpinned: Removed the rule pinned to that account.
+    tax_households:
+      update:
+        saved: Marginal rate saved.
+        # Clearing it is a real choice, not a failed edit, so it gets a message
+        # that says what state the household is now in rather than one that
+        # sounds like nothing happened.
+        cleared: >-
+          Marginal rate cleared. The report will say it is working from a
+          placeholder.
+        unreadable: >-
+          "%{value}" is not a percentage this page can read. Nothing was saved.

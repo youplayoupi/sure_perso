@@ -10,6 +10,23 @@ fr:
     taxes:
       show:
         page_title: Fiscalité
+        household_title: Votre taux marginal d'imposition
+        household_subtitle: >-
+          Le taux auquel votre euro de revenu suivant est imposé. Toute règle
+          qui impose quelque chose comme un revenu s'en sert — les versements
+          déduits sortant d'un PER au premier chef. Relevez-le sur votre
+          dernier avis d'imposition : un taux à peu près juste vaut bien mieux
+          que la valeur d'attente.
+        household_rate_label: Taux marginal, en pourcentage
+        household_save: Enregistrer
+        household_declared: >-
+          Le rapport utilise ce chiffre. Vider le champ revient à dire que vous
+          ne l'avez pas renseigné, ce qui n'est pas la même chose que dire
+          qu'il vaut zéro.
+        household_undeclared: >-
+          Vous ne l'avez pas renseigné. Le rapport calcule quand même, avec 30 %
+          à la place, et signale sur chaque chiffre qui en dépend qu'il s'agit
+          d'une valeur d'attente et non de votre taux.
         rules_title: Comment chaque produit est imposé
         rules_subtitle: >-
           Une règle par produit que vous détenez, selon les règles %{country}.
@@ -20,7 +37,7 @@ fr:
         coverage_summary: >-
           %{covered} des %{total} produits que vous détenez ont une règle.
         library_link: Voir ce que fait chaque règle, ou écrire la vôtre
-        rates_link: Corriger un taux, un barème ou un plafond
+        rates_link: Corriger un taux ou un plafond
         no_products: >-
           Aucun compte que le rapport puisse imposer : il n'y a donc rien à
           régler pour l'instant.
@@ -82,3 +99,12 @@ fr:
           Rien n'a été enregistré.
       destroy:
         unpinned: Règle rattachée à ce compte retirée.
+    tax_households:
+      update:
+        saved: Taux marginal enregistré.
+        cleared: >-
+          Taux marginal effacé. Le rapport indiquera qu'il travaille avec une
+          valeur d'attente.
+        unreadable: >-
+          « %{value} » n'est pas un pourcentage que cette page sait lire. Rien
+          n'a été enregistré.

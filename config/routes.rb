@@ -352,6 +352,14 @@ Rails.application.routes.draw do
       # set of corrections per country rather than a collection of them, and
       # `destroy` means "go back to what the module ships".
       resource :rates, controller: "tax_rates", only: %i[show update destroy]
+
+      # The household's own marginal rate of income tax. Update only: the form
+      # lives at the top of the Taxes page rather than on a screen of its own,
+      # because it is one field and because it is the first thing that has to
+      # be right before anything below it means much. No `destroy` -- clearing
+      # the field is how you go back to undeclared, and a second way to do the
+      # same thing would only be a second thing to keep working.
+      resource :household, controller: "tax_households", only: :update
     end
     get "bank_sync", to: redirect("/settings/providers", status: 301)
     resource :providers, only: %i[show update] do

@@ -12,22 +12,29 @@ en:
       none: not set
       effective_from: Takes effect from
       rate_percent: Rate, as a percentage
-      upto: Income up to
-      upto_open: leave empty for the top band
       maturity_years: Maturity, in years
       ceiling: Ceiling on payments in
       shipped_was: "This module ships %{value}"
-      shipped_band_was: "This module ships %{upto} at %{rate}"
       add_rate: Add a dated rate
-      add_band: Add a band
-      add_schedule: Add a year
       remove_row: Remove this row
-      remove_schedule: Remove this year
+      # Keyed by the name the country file gives the rate. The screen looks
+      # each one up with the section's own name humanised as the fallback, so a
+      # country file carrying a rate nobody has named here still renders — it
+      # just says "Social charges" rather than something better. Adding a
+      # country means adding its names to this block and nothing else.
       sections:
         social_charges: Social charges
         flat_tax_income_component: Flat tax, income-tax part
-        income_tax_brackets: Income-tax scale
+        flat_tax: Flat tax
         products: Products
+      hints:
+        social_charges: >-
+          Prélèvements sociaux on investment income. Applied by nearly every
+          rule in the module, so a correction here moves most of the report.
+        flat_tax_income_component: >-
+          The income-tax part of the PFU only. The headline flat tax is this
+          plus social charges, and it is shown below rather than edited here:
+          the module adds the two so they cannot drift apart.
       show:
         page_title: Tax rates
         rates_title: Rates
@@ -37,23 +44,14 @@ en:
           rate is read on the date the report is drawn — correcting next
           year's figure today leaves last year's report reproducing exactly
           as before.
-        social_charges_hint: >-
-          Prélèvements sociaux on investment income. Applied by nearly every
-          rule in the module, so a correction here moves most of the report.
-        flat_tax_hint: >-
-          The income-tax part of the PFU only. The headline flat tax is this
-          plus social charges, which is why it is not a field of its own: the
-          module adds the two so they cannot drift apart.
-        flat_tax_headline: >-
-          It currently comes to %{headline}%.
-        brackets_title: Income-tax scale
-        brackets_subtitle: >-
-          The barème, per part of quotient familial. Used wherever a rule
-          sends something to the progressive scale rather than the flat tax —
-          the deducted payments out of a PER, most commonly. The last band's
-          threshold is left empty on purpose: that is what makes it
-          open-ended, and without it the highest incomes would fall out of
-          the calculation untaxed.
+        composites_title: Rates made of other rates
+        composites_subtitle: >-
+          Figures the country's file declares as a sum of the rates above,
+          shown here because they are the ones people quote to each other. They
+          cannot be edited directly: a box here would be a second place to
+          change the same number, and the two would disagree the first time
+          anyone used it. Correct a part above and the total follows.
+        composite_parts: "Adds up %{parts}"
         products_title: Product figures
         products_subtitle: >-
           What the rules need to know about each wrapper. The maturity is the
@@ -77,7 +75,7 @@ en:
         about_upgrades: >-
           Only what you change is stored. A figure you leave alone keeps
           following the file this module ships, so a future release that
-          carries a new rate or a new scale gives it to you automatically. A
+          carries a new rate gives it to you automatically. A
           figure you correct is yours from then on, and stays yours through
           that release — which is the point, but it does mean a section you
           corrected once will not update itself.

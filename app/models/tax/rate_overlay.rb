@@ -13,8 +13,13 @@ module Tax
   #
   # Three shapes, three merges, no others:
   #
-  #   effective-dated lists  (social_charges, flat_tax_income_component,
-  #                           income_tax_brackets)
+  #   effective-dated rate lists
+  #       Which sections these are is read off the shipped file rather than
+  #       listed here: any top-level key holding a list of entries that each
+  #       carry an `effective_from` and a `rate`. That is what lets a second
+  #       country ship a file with sections France has never heard of and get
+  #       a working corrections screen with no change to this module.
+  #
   #       Matched on `effective_from`. An override with a date the file already
   #       has replaces that entry; an override with a new date is added to the
   #       schedule. The result is re-sorted by date.
@@ -34,14 +39,38 @@ module Tax
   # merge happened to put first -- a coin toss deciding a tax rate. Matching on
   # the date removes the tie instead of picking a winner for it.
   module RateOverlay
-    # Sections the UI may correct. An override naming anything else is dropped
-    # and reported, not merged: an unknown key is far more likely to be a typo
-    # ("social_charge") that would otherwise sit in the database looking
-    # applied while changing nothing.
-    DATED_SECTIONS = %w[social_charges flat_tax_income_component income_tax_brackets].freeze
-    SECTIONS = (DATED_SECTIONS + %w[products]).freeze
+    # Top-level keys of a rate file that are not effective-dated rate lists.
+    # Named so that `dated_sections` can recognise a rate section by shape and
+    # still not mistake one of these for one.
+    NON_RATE_KEYS = %w[country currency products composites unmodelled].freeze
+
+    PRODUCTS = "products"
 
     class << self
+      # The effective-dated rate sections of a rate file, by name.
+      #
+      # Recognised by shape, not by a list kept in Ruby. A section is a list of
+      # entries, each dated and each carrying a rate. Everything a country file
+      # holds that is not that -- its identity, its products, its composites,
+      # its list of things nobody has modelled -- is excluded by shape anyway;
+      # NON_RATE_KEYS is belt and braces for a future key that happens to look
+      # like one.
+      #
+      # Both the corrections screen and Tax::RateEdit ask this rather than
+      # keeping their own idea of what the file contains, because two lists
+      # would drift and the way it would show is a section that is editable on
+      # screen and silently discarded on save.
+      def dated_sections(data)
+        (data || {}).each_with_object([]) do |(key, value), out|
+          name = key.to_s
+          next if NON_RATE_KEYS.include?(name)
+          next unless value.is_a?(Array) && !value.empty?
+          next unless value.all? { |e| e.respond_to?(:to_h) && !e.is_a?(Array) && dated_rate?(e) }
+
+          out << name
+        end.sort
+      end
+
       # Returns a new hash. Neither argument is mutated, because `base` is the
       # parsed YAML that Tax.rate_table memoises for the whole process, and a
       # merge that wrote into it would leak one family's corrections into every
@@ -66,17 +95,27 @@ module Tax
       # Empty means it can be saved. Same contract as Formula#errors and for
       # the same reason: a form should be able to show every problem at once
       # rather than make the author find them one save at a time.
-      def errors(overrides)
+      # `known_sections` is the section list of the file these corrections are
+      # written against, and passing it is what turns a typo into an error. An
+      # unknown key is far more likely to be "social_charge" than a section
+      # this module has not heard of, and left unreported it would sit in the
+      # database looking applied while changing nothing. Callers that have the
+      # shipped file -- which is all of them in the app -- should pass it.
+      # Omitted, the shape of each section is still checked; only the names
+      # are taken on trust.
+      def errors(overrides, known_sections: nil)
         return [] if overrides.nil? || overrides.empty?
 
         unless overrides.respond_to?(:to_h)
           return [ "Rate corrections must be a set of sections, not #{overrides.class}." ]
         end
 
+        permitted = known_sections.nil? ? nil : (Array(known_sections).map(&:to_s) + [ PRODUCTS ])
+
         normalise(overrides).flat_map do |section, value|
-          if !SECTIONS.include?(section)
-            [ "'#{section}' is not a section of the rate file (#{SECTIONS.join(', ')})." ]
-          elsif section == "products"
+          if permitted && !permitted.include?(section)
+            [ "'#{section}' is not a section of the rate file (#{permitted.sort.join(', ')})." ]
+          elsif section == PRODUCTS
             product_errors(value)
           else
             dated_errors(section, value)
@@ -84,7 +123,9 @@ module Tax
         end
       end
 
-      def valid?(overrides) = errors(overrides).empty?
+      def valid?(overrides, known_sections: nil)
+        errors(overrides, known_sections: known_sections).empty?
+      end
 
       # Which sections a family has actually corrected, for the "this figure is
       # not the shipped one" flag on the report. A section present but equal to
@@ -97,6 +138,11 @@ module Tax
       end
 
       private
+        def dated_rate?(entry)
+          row = stringify(entry)
+          row.key?("effective_from") && row.key?("rate")
+        end
+
         # jsonb round-trips with string keys, but a hash built in a controller
         # or a test arrives with symbols. Normalising once here means every
         # method below can assume strings, and the two paths cannot drift.
@@ -167,30 +213,12 @@ module Tax
           end
         end
 
-        def entry_value_errors(section, where, row)
-          if section == "income_tax_brackets"
-            return [ "#{where} has no brackets." ] unless row["brackets"].is_a?(Array) &&
-                                                          !row["brackets"].empty?
-
-            return bracket_errors(where, row["brackets"])
-          end
-
+        # Every dated section is one rate per date. It used to be two shapes,
+        # the second being the income-tax scale with its list of bands; that
+        # went when the scale did, and with it the only reason this method had
+        # to know one section name from another.
+        def entry_value_errors(_section, where, row)
           rate_errors(where, row["rate"])
-        end
-
-        def bracket_errors(where, brackets)
-          problems = brackets.each_with_index.flat_map do |bracket, index|
-            rate_errors("#{where} bracket #{index + 1}", stringify(bracket)["rate"])
-          end
-
-          # An open-ended top bracket is what stops income above the last
-          # threshold from falling out of the calculation untaxed.
-          unless brackets.any? { |b| stringify(b)["upto"].nil? }
-            problems << "#{where} has no final open-ended bracket, so the highest " \
-                        "incomes would not be taxed at all. Leave the last 'up to' empty."
-          end
-
-          problems
         end
 
         def rate_errors(where, rate)

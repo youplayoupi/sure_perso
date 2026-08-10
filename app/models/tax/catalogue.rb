@@ -30,11 +30,23 @@ module Tax
           "Cash deposit or livret: withdrawing the balance is not itself a " \
           "taxable event."
         ],
+        # The two PER shapes. They are the same wrapper and differ only in what
+        # the growth is taxed at, which is the one part of a French PER
+        # withdrawal the household elects rather than inherits. Both are
+        # offered because Sure cannot see which election was made -- that is a
+        # box on a tax return, not a fact about an account -- and guessing
+        # would be picking a number on the household's behalf.
         "fr_capital_and_gains" => [
           Rules::Fr::CapitalAndGains,
-          "Deferred-tax pension wrapper taken as a lump sum: deducted " \
-          "payments taxed as income, growth at the flat rate. Use this for a " \
-          "PER until Sure ships a subtype for it."
+          "PER taken as a lump sum, the default way: the deducted payments " \
+          "taxed at your marginal rate, the growth at the flat tax. Use this " \
+          "until Sure ships a PER subtype."
+        ],
+        "fr_capital_and_gains_household" => [
+          Rules::Fr::CapitalAndGainsAtHouseholdRate,
+          "The same PER lump sum with the progressive scale elected over the " \
+          "flat tax, so the growth is taxed at your marginal rate too. Worth " \
+          "electing when your rate is below the flat tax."
         ],
         "exempt" => [
           Rules::Exempt,

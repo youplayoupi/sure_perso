@@ -41,9 +41,7 @@ module Tax
         [ "Investment", "pea_pme" ]       => Rules::Fr::Pea.new,
         [ "Investment", "brokerage" ]     => securities,
         [ "Investment", "assurance_vie" ] => Rules::NotModelled.new(
-          reason: "Assurance vie taxation depends on the age of the contract, the split " \
-                  "between capital and gains, an annual allowance and which of two " \
-                  "regimes the payments fall under. Sure stores none of that."
+          reason: Message.new("not_modelled.assurance_vie")
         ),
 
         [ "Depository", "checking" ]     => deposit,
@@ -52,14 +50,10 @@ module Tax
         [ "Depository", "money_market" ] => deposit,
 
         [ "Crypto", TYPE_WILDCARD ] => Rules::NotModelled.new(
-          reason: "French crypto gains are computed on a portfolio-wide formula that " \
-                  "prorates total acquisition cost across the whole holding, not " \
-                  "per-asset. That is a different calculation from securities and is " \
-                  "not implemented."
+          reason: Message.new("not_modelled.crypto")
         ),
         [ "Property", TYPE_WILDCARD ] => Rules::NotModelled.new(
-          reason: "Property gains depend on whether it is your main home, and otherwise " \
-                  "on allowances that taper with how long you have owned it. Not modelled."
+          reason: Message.new("not_modelled.property")
         )
       }
     end
@@ -116,36 +110,22 @@ module Tax
       resolve(subject).call(subject, on: on, rates: rates, assumptions: assumptions)
     end
 
-    # Tax a whole portfolio in one pass, carrying progressive-scale income
-    # across accounts.
+    # Tax a whole portfolio in one pass.
     #
-    # Applying each rule in isolation understates the bill whenever two
-    # wrappers land on the progressive scale in the same year: they are added
-    # together and run through the brackets once, not taxed twice from zero.
-    # Accounts are sorted first so the result never depends on the order rows
-    # came back from the database.
+    # This used to carry income from one account to the next, adding the
+    # wrappers that landed on the progressive scale together and running them
+    # through the brackets once rather than taxing each from zero. With the
+    # scale replaced by a single household marginal rate that is no longer a
+    # correction of any kind: one rate multiplied over a sum is the same number
+    # as the sum of the same rate over each part. The loop was kept for a while
+    # anyway and it was worse than useless -- it produced a warning about
+    # brackets nobody was crossing.
+    #
+    # What stays is the ordering. Accounts are sorted before they are taxed so
+    # the report never depends on the order rows came back from the database,
+    # which is what makes two runs of the same portfolio comparable.
     def apply_all(subjects, on:, rates:, assumptions:)
-      stacked = BigDecimal(0)
-
-      sort(subjects).map do |subject|
-        local = if stacked.positive?
-          assumptions.with(other_taxable_income: assumptions.other_taxable_income + stacked)
-        else
-          assumptions
-        end
-
-        line = apply(subject, on: on, rates: rates, assumptions: local)
-
-        if stacked.positive? && line.bareme_income.positive?
-          line.add_warning(
-            "Stacked on #{stacked.to_s('F')} of income from wrappers liquidated earlier " \
-            "in the same year, which is what pushes it into higher brackets."
-          )
-        end
-
-        stacked += line.bareme_income
-        line
-      end
+      sort(subjects).map { |subject| apply(subject, on: on, rates: rates, assumptions: assumptions) }
     end
 
     private
@@ -167,11 +147,10 @@ module Tax
           gross: nil,
           taxable_base: nil,
           tax: nil,
-          basis: "cannot be computed",
+          basis: Message.new("base.cannot_be_computed"),
           modelled: false,
           warnings: [
-            "This account's value could not be expressed in #{subject.currency}, " \
-            "so it is excluded from the totals entirely -- not counted as zero."
+            Message.new("registry.no_value", currency: subject.currency)
           ]
         )
       end
