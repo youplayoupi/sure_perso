@@ -8,11 +8,22 @@ en:
   settings:
     settings_nav:
       taxes_label: Taxes
-      # The two sub-items under Taxes. Named for what a household came to do
-      # rather than for the model behind them -- "Rates" is the page you want
-      # when a rate has changed, and it is called that on the tax screen too.
-      tax_rules_label: Rules
-      tax_rates_label: Rates
+      # The two sub-items under Taxes, qualified rather than bare.
+      #
+      # "Rules" alone is what a household came to do and reads better under a
+      # parent already called Taxes, but the settings rail already has a Rules
+      # -- transaction rules, further down under Transactions. Two links with
+      # the same accessible name going to different pages is a problem for
+      # anyone reading the rail as a list rather than seeing the indent, and it
+      # breaks the existing settings system test, which clicks the first link
+      # named "Rules" and asserts it landed on the transactions one. Ours would
+      # be first: General comes before Transactions.
+      #
+      # Both are qualified, not just the one that collides, so the pair stays
+      # symmetrical and so the next section to add a "Rates" does not reopen
+      # this.
+      tax_rules_label: Tax rules
+      tax_rates_label: Tax rates
     taxes:
       show:
         page_title: Taxes

@@ -205,12 +205,23 @@ module Tax
       # whether the stored column is good, and the question here is whether the
       # cost is knowable at all.
       #
-      # This costs one query per holding when the column is null, since that is
-      # where `avg_cost` falls back to SQL over the trades. Tens of holdings on
-      # a page nobody loads in a loop is a note rather than a defect; batching
-      # it belongs in the same change as measuring it.
+      # Where the column is null, `avg_cost` derives the figure in SQL, and
+      # that derivation reads `account.trades`, `account.currency` and
+      # `security.id`. Unpreloaded, that is three queries per holding rather
+      # than one, and two of the three buy nothing. Hence the `includes`.
+      #
+      # The remaining aggregate stays one per holding, and it is deliberately
+      # left alone. Batching it means reproducing Holding#calculate_avg_cost
+      # here -- its exchange-rate LEFT JOIN, and its `entries.date <= ?` bound,
+      # which varies per holding because `current_holdings` takes DISTINCT ON
+      # (security_id) by date and different securities can land on different
+      # dates. A second implementation of that arithmetic, drifting from the
+      # first, is how this module would come to print a confident wrong number,
+      # which is the one thing it exists not to do. A query count is worth less
+      # than that. If the batch is wanted, it belongs on Holding as a public
+      # bulk accessor that every caller shares, not copied into a report.
       def cost_basis_for(account)
-        holdings = account.current_holdings.to_a
+        holdings = account.current_holdings.includes(:security, :account).to_a
         return nil if holdings.empty?
 
         totals = holdings.map { |holding| position_cost(holding) }

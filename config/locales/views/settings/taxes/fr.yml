@@ -5,8 +5,10 @@ fr:
   settings:
     settings_nav:
       taxes_label: Fiscalité
-      tax_rules_label: Règles
-      tax_rates_label: Taux
+      # Qualifiées comme en anglais, et pour la même raison : « Règles » existe
+      # déjà plus bas dans le menu, pour les règles de transaction.
+      tax_rules_label: Règles fiscales
+      tax_rates_label: Taux d'imposition
     taxes:
       show:
         page_title: Fiscalité
