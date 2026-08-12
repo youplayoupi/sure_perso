@@ -34,23 +34,46 @@ module Tax
         # in neither term, which is the arithmetic saying they come back
         # untaxed rather than a gap where a term should be.
         formula terms: [
-          { base: "paid_in_deducted",  rate: "household_rate" },
-          { base: "gain_over_paid_in", rate: "flat_tax" }
+          { base: "plus_value_base_deducted", rate: "household_rate" },
+          { base: "plus_value",               rate: "flat_tax" }
         ], notes: [ Message.new("fr_capital_and_gains.whole_wrapper_lump_sum") ]
 
         def call(subject, on:, rates:, assumptions:)
-          if subject.paid_in.nil?
+          base, source = subject.plus_value_base
+
+          if base.nil?
             return refuse(
               subject,
               reason: msg("fr_capital_and_gains.no_paid_in"),
               needs: msg("facts.paid_in"),
-              extra_warnings: cost_basis_footnote(subject)
+              missing: [ :paid_in ]
             )
           end
 
           warnings = []
-          paid_in = subject.paid_in
+          paid_in = base
           deducted = subject.paid_in_deducted
+
+          # Where the versements are undeclared, what the holdings cost stands
+          # in for them -- in *both* terms, which is the whole of why this is
+          # defensible.
+          #
+          # The two terms between them tax the entire value: what went in, plus
+          # what it grew by. Move the stand-in into the gain term alone and the
+          # sum stops being the value: a slice the size of the cost basis falls
+          # out of the calculation entirely, and the bill drops by the
+          # household's rate on it. Put it in both and the sum is exact again;
+          # the only thing left wrong is *which rate* applies to the difference
+          # between the cost basis and the true versements, and since the cost
+          # basis is the larger of the two whenever the wrapper has gained, that
+          # difference is taxed at the household's rate when it should have
+          # taken the flat tax. Too much, in other words, rather than too
+          # little -- which is the only direction this module is willing to be
+          # wrong in without being asked.
+          if source == :cost_basis
+            warnings << msg("fr_capital_and_gains.computed_from_cost_basis",
+                            cost_basis: amount(base))
+          end
 
           if deducted.nil?
             deducted = paid_in
@@ -103,6 +126,7 @@ module Tax
                        gains_rate: gains_basis(growth_rate),
                        gains: amount(gains),
                        gains_tax: amount(cents(gains_tax))),
+            basis_source: source,
             warnings: warnings,
             household_rate_income: household_rate_income(deducted, gains)
           )

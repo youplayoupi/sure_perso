@@ -1,0 +1,66 @@
+<%#
+  One declarable fact, rendered by name.
+
+  A partial rather than four blocks in the form, so that a field's label and
+  hint are written once. It is rendered from one place now that the disclosure
+  is gone, and it stays a partial because the form is assembled from a list the
+  controller computes rather than from a fixed set of fields.
+
+  Labels and hints come through `tax_fact_label` / `tax_fact_hint` rather than
+  from `t` directly, so that a rule with something of its own to say about a
+  fact says it. The opening date is the case that forced this: the same
+  sentence cannot describe a PEA's five-year clock and a PER's vintage.
+
+  Keys are given in full rather than through the lazy `t(".x")` form. Lazy
+  lookup resolves against the template that happens to be rendering, and these
+  strings belong to the fact, not to this partial.
+%>
+<div class="space-y-1">
+  <% if fact == :product %>
+    <%= f.select :product,
+                 [ [ t("tax.profiles.fields.product.from_sure"), "" ] ] + product_choices,
+                 { label: tax_fact_label(fact, rule_id) } %>
+  <% elsif fact == :opened_on %>
+    <%= f.date_field :opened_on, label: tax_fact_label(fact, rule_id) %>
+  <% else %>
+    <%# The currency is in the label rather than assumed. These figures are
+        copied off a statement in the account's own currency, and the report
+        converts them; leaving the label bare invites entering euros into a
+        dollar account and getting a confidently wrong answer back. %>
+    <%= f.number_field fact, step: "0.01",
+                       label: tax_fact_label(fact, rule_id, currency: account.currency) %>
+  <% end %>
+
+  <p class="text-xs text-secondary">
+    <%= tax_fact_hint(fact, rule_id, currency: account.currency) %>
+  </p>
+
+  <%# What Sure knows about the date, which is one of two quite different
+      things and is never pre-filled into the box.
+
+      Pre-filling would make Sure's answer look like something the reader had
+      declared, and the two are treated differently: a declared date overrides,
+      an anchor is deferred to. An empty field keeps that difference visible
+      and keeps clearing the override possible.
+
+      The field is offered either way. An earlier version dropped it from the
+      form whenever Sure had a date, which was defensible while the disclosure
+      below still held it and became a trap once that went: the household's own
+      date is the one the law cares about -- the first payment in, not the day
+      a balance was first recorded -- and there has to be somewhere to say so. %>
+  <% if fact == :opened_on && sure_opening_date.present? %>
+    <p class="text-xs text-secondary">
+      <%= t("tax.profiles.fields.opened_on.from_sure",
+            date: l(sure_opening_date, format: :long)) %>
+    </p>
+  <% elsif fact == :opened_on && sure_known_since.present? %>
+    <%# A floor, and said as such. An opening anchor carrying a balance proves
+        the account existed before that date without saying when it began, so
+        it is offered as the bound it is -- context for someone reaching for a
+        statement, never a value to accept. See Tax::SubjectBuilder#known_since. %>
+    <p class="text-xs text-secondary">
+      <%= t("tax.profiles.fields.opened_on.known_since",
+            date: l(sure_known_since, format: :long)) %>
+    </p>
+  <% end %>
+</div>

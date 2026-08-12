@@ -95,6 +95,55 @@ class Tax::MessagesTest < ActiveSupport::TestCase
     end
   end
 
+  # The same shape as the parity test above, and there for the same reason.
+  #
+  # `Messages.severity` defaults to `:note`, so nothing breaks when a key is
+  # missing from the table -- it just quietly joins the pile of sentences the
+  # page shows least prominently. A refusal that landed there would be a row
+  # printing "not computed" with the reason folded away behind a disclosure,
+  # which is precisely the failure this whole part exists to fix, arriving by
+  # omission instead of by design.
+  #
+  # So the default is for robustness at runtime and this is the thing that
+  # stops anybody relying on it: a key added without a decision fails here,
+  # while its author is still holding the reason.
+  test "every message the engine can emit has a declared severity" do
+    undeclared = Tax::Messages::TEXTS.keys - Tax::Messages::SEVERITY.keys
+
+    assert_empty undeclared, <<~MESSAGE
+      #{undeclared.size} tax message(s) have no entry in Tax::Messages::SEVERITY.
+
+      Decide what each one asks of the reader -- :note, :gap or :blocker -- and
+      say so there. Left out, they default to :note, which puts them behind the
+      "n notes" disclosure on the report.
+
+      #{undeclared.sort.join("\n")}
+    MESSAGE
+  end
+
+  # The other direction. A key removed from TEXTS -- Part 3 removed several --
+  # leaves a line in SEVERITY that reads like a decision about a sentence
+  # nobody can see any more.
+  test "no severity is declared for a message that no longer exists" do
+    orphans = Tax::Messages::SEVERITY.keys - Tax::Messages::TEXTS.keys
+
+    assert_empty orphans,
+                 "these keys have a severity but no English: #{orphans.join(', ')}"
+  end
+
+  test "every fact a gap asks for is one the account form actually offers" do
+    Tax::Messages::ASKS_FOR.each do |key, fact|
+      assert_equal :gap, Tax::Messages.severity(key),
+                   "#{key} names a fact to declare but is not a gap"
+      # The demotion in TaxReportsHelper#tax_severity intersects against this
+      # list, so a fact outside it would be an entry that never does anything
+      # -- and would look, to the next reader, like a demotion that was
+      # supposed to happen and did not.
+      assert_includes Tax::Profile::DECLARABLE, fact,
+                      "#{key} asks for #{fact}, which no account form collects"
+    end
+  end
+
   private
     def translated?(locale, key)
       namespace = key.split(".").first

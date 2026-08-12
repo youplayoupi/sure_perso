@@ -25,7 +25,9 @@ module Tax
       "gain_over_cost_basis" => "the gain over cost basis",
       "paid_in" => "the payments in",
       "paid_in_deducted" => "the deducted payments in",
-      "paid_in_not_deducted" => "the payments in that were not deducted"
+      "paid_in_not_deducted" => "the payments in that were not deducted",
+      "plus_value" => "the gain over what went in",
+      "plus_value_base_deducted" => "the deducted part of what went in"
     }.freeze
 
     # Facts an account has to carry for a term to be computable. Keys are the

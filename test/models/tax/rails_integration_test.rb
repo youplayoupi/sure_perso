@@ -444,11 +444,154 @@ module Tax
       assert_empty subject.declared
     end
 
-    test "cost basis is nil rather than a partial sum when a holding is missing one" do
+    # Sure's opening date, and the three ways it can be wrong to use.
+    #
+    # `Account#opening_anchor_date` always returns something, and only one of
+    # the things it can return is a statement about when the account began.
+    # These three tests pin which one this module is willing to believe,
+    # because the failure mode is silent: a PEA that looks younger than it is
+    # goes from exempt to taxed at the full flat rate, confidently.
+
+    # Set an opening anchor without going through Account#set_opening_anchor_balance,
+    # which would also enqueue a sync.
+    def anchor(account, on:, balance: 1_000)
+      Account::OpeningBalanceManager.new(account)
+                                    .set_opening_balance(balance: balance, date: on)
+    end
+
+    def subject_for(account)
+      SubjectBuilder.new(@family).subjects.find { |s| s.id == account.id }
+    end
+
+    # Put the securities in the same currency as the account holding them.
+    #
+    # `Account#current_holdings` scopes to the account's own currency, and this
+    # class moves every account to euros in `setup`, so the dollar-denominated
+    # holdings in the fixtures fall out of the query and every account looks
+    # like it holds nothing. That is a fixture artefact rather than a real
+    # shape -- Sure keeps one currency per account -- but it silently turns a
+    # cost basis assertion into a test of the empty case, which is exactly the
+    # test that already passes for the wrong reason.
+    #
+    # The trades move too. `Holding#avg_cost` falls back to totalling them, and
+    # that query converts through `COALESCE(exchange_rates.rate, 1)`, so a
+    # dollar trade under a euro account would be counted at par. Leaning on
+    # that would make these tests pass on a fabricated rate, which is the one
+    # thing this module refuses to do anywhere else.
+    def in_euros(account)
+      account.holdings.update_all(currency: "EUR")
+      Trade.where(id: account.entries.where(entryable_type: "Trade").select(:entryable_id))
+           .update_all(currency: "EUR")
+      account
+    end
+
+    # An anchor at zero is the account beginning. Nothing was in it, so there
+    # is nothing the date could be later than.
+    test "an anchor with no money behind it is Sure saying when the account began" do
       account = accounts(:investment)
+      anchor(account, on: Date.new(2010, 1, 1), balance: 0)
+
+      subject = subject_for(account)
+
+      assert_equal Date.new(2010, 1, 1), subject.opened_on
+      assert_nil subject.known_since, "an opening date makes a lower bound redundant"
+      # And not `declared`: this is Sure answering, not the household. The
+      # distinction matters to rules that say where a figure came from.
+      assert_not_includes subject.declared, :opened_on
+    end
+
+    # An anchor carrying a balance is the opposite statement. Money was already
+    # in the account on that date, so the account existed before it -- which
+    # makes the date a floor on how long it has been held rather than the date
+    # it was opened.
+    #
+    # This is the case that mattered in practice. Sure writes an anchor for
+    # every manually created account, dated when the balance was entered, and
+    # the earlier version of this guard asked only whether an anchor existed.
+    # Every wrapper in a hand-entered portfolio therefore came back zero years
+    # old, which turns a mature PEA into one taxed at the full flat rate.
+    test "an anchor with money behind it is a lower bound, not an opening date" do
+      account = accounts(:investment)
+      anchor(account, on: Date.new(2010, 1, 1), balance: 1_000)
+
+      subject = subject_for(account)
+
+      assert_nil subject.opened_on
+      assert_equal Date.new(2010, 1, 1), subject.known_since
+    end
+
+    test "the earliest-entry fallback is refused rather than mistaken for either" do
+      account = accounts(:investment)
+
+      # No anchor, so Sure falls back to the oldest entry on file -- fine for
+      # drawing a balance chart from the left edge, and not an answer to "when
+      # was this opened". The account is older than its Sure history whenever
+      # the history was imported, which is most of the time.
+      assert_not account.has_opening_anchor?
+      assert_not_nil account.opening_anchor_date
+
+      subject = subject_for(account)
+
+      assert_nil subject.opened_on
+      assert_nil subject.known_since
+    end
+
+    test "a declared opening date overrides Sure's anchor" do
+      account = accounts(:investment)
+      anchor(account, on: Date.new(2010, 1, 1))
+      Profile.create!(account: account, opened_on: Date.new(2005, 6, 30))
+
+      subject = subject_for(account)
+
+      # An anchor is a balance's starting point and can legitimately sit later
+      # than the first payment in, which is the date the five-year clocks run
+      # from. So the household's own date wins where there is one.
+      assert_equal Date.new(2005, 6, 30), subject.opened_on
+      assert_includes subject.declared, :opened_on
+      # And the bound goes with it. Two facts about one clock, one of them
+      # strictly weaker, is an invitation for a rule to quote the weaker one
+      # beside an answer it did not need it for.
+      assert_nil subject.known_since
+    end
+
+    # -- cost basis --------------------------------------------------------
+
+    # The column Sure stores is an average cost *per share*, written by
+    # Holding::ForwardCalculator as total cost over total quantity. Summing it
+    # across a portfolio adds prices together, which is not the cost of
+    # anything: one share of an expensive security would weigh as much as a
+    # thousand of a cheap one. This is the test that would have caught it.
+    test "cost basis multiplies the per-share figure by the quantity held" do
+      account = in_euros(accounts(:investment))
+      account.holdings.update_all(cost_basis: 100)
+
+      holding = account.current_holdings.first
+      subject = subject_for(account)
+
+      assert_equal 10, holding.qty
+      assert_equal BigDecimal(1_000), subject.cost_basis
+    end
+
+    # A null column is not the same as an unknowable cost. Sure holds the
+    # trades and totals them on demand through Holding#avg_cost; refusing on a
+    # null column meant refusing accounts whose entire purchase history is on
+    # file, which is most imported ones.
+    test "a null cost basis column still has a cost where the trades are on file" do
+      account = in_euros(accounts(:investment))
       account.holdings.update_all(cost_basis: nil)
 
-      subject = SubjectBuilder.new(@family).subjects.find { |s| s.id == account.id }
+      subject = subject_for(account)
+
+      # The fixture holds ten shares bought at 214.
+      assert_equal BigDecimal(2_140), subject.cost_basis
+    end
+
+    test "cost basis is nil rather than a partial sum when one holding has neither" do
+      account = in_euros(accounts(:investment))
+      account.holdings.update_all(cost_basis: nil)
+      account.entries.where(entryable_type: "Trade").destroy_all
+
+      subject = subject_for(account)
 
       # A partial sum understates cost basis, which overstates the gain, which
       # overstates the tax while looking authoritative. Nil makes the rule say
@@ -702,6 +845,370 @@ module Tax
 
     test "no family means nothing held, rather than an exception" do
       assert_empty tax_products_held(nil)
+    end
+  end
+
+  # -------------------------------------------------------------------------
+
+  # The hint a form shows beside a field, resolved for the rule that will read
+  # it.
+  #
+  # This is a test about a fallback chain, which is why the chain lives in a
+  # helper rather than inline in ERB. The failure it guards against is silent:
+  # one hint per fact for the whole module meant the opening-date hint
+  # explained the PEA's five-year clock on every account that asked for a date,
+  # including the ones where the date starts no clock at all. Nothing renders
+  # wrong, nothing raises -- the reader is simply told something untrue about
+  # their own account and has no way to know it was written for another one.
+  class FactHintTest < ActionView::TestCase
+    tests TaxReportsHelper
+
+    test "a rule with something of its own to say about a fact says it" do
+      generic = I18n.t("tax.profiles.fields.opened_on.hint")
+      specific = tax_fact_hint(:opened_on, "fr_pea")
+
+      assert_not_equal generic, specific
+      assert_equal I18n.t("tax.rules.fr_pea.facts.opened_on.hint"), specific
+    end
+
+    test "a rule with nothing of its own to say falls back to the generic hint" do
+      # The point of the fallback, and the reason this list is the exceptions
+      # rather than the cross product of every rule and every fact: a rule
+      # added tomorrow inherits sentences that are already true instead of
+      # rendering a missing key until somebody writes four more.
+      assert_equal I18n.t("tax.profiles.fields.product.hint"),
+                   tax_fact_hint(:product, "fr_pea")
+    end
+
+    test "no rule at all still produces a sentence" do
+      # Rules::Unknown and Rules::NotModelled resolve to no formula, and the
+      # controller then asks for no facts -- but a blank rule_id must not turn
+      # into a lookup for `tax.rules..facts.x.hint`.
+      assert_equal I18n.t("tax.profiles.fields.paid_in.hint", currency: "EUR"),
+                   tax_fact_hint(:paid_in, nil, currency: "EUR")
+    end
+
+    test "the currency reaches the strings that ask for one" do
+      assert_includes tax_fact_label(:paid_in, nil, currency: "EUR"), "EUR"
+    end
+
+    test "an override is available for labels as well as hints" do
+      # Nothing overrides a label today; the cascade exists for the case where
+      # a rule means something different by the same field, and asserting the
+      # fallback here is what stops the label path from rotting unnoticed
+      # before the first override lands.
+      assert_equal I18n.t("tax.profiles.fields.opened_on.label"),
+                   tax_fact_label(:opened_on, "fr_pea")
+    end
+  end
+
+  # What colour a row is, and which of its sentences the reader has to read.
+  #
+  # The defect these are written against: the pill keyed off `warnings.any?`,
+  # so a Livret A carrying "interest is taxed as it arises" -- true forever,
+  # asking nobody for anything -- rendered the same amber as a wrapper missing
+  # the one figure that would let it be computed. Six rows in eight came out
+  # amber, which is the same information as none of them coming out amber.
+  #
+  # Built from Tax::Result directly rather than through the engine. The subject
+  # here is the page's reading of a result, and going through a rule would make
+  # each of these depend on that rule continuing to emit the particular
+  # sentence the test picked -- a failure in a file that has nothing to do with
+  # what broke.
+  class StatusPillTest < ActionView::TestCase
+    tests TaxReportsHelper
+
+    def result_with(*keys, tax: BigDecimal(10), reviewed: false, modelled: true)
+      Result.new(
+        account_id: "x", account_name: "An account", currency: "EUR",
+        gross: BigDecimal(100), tax: tax, modelled: modelled,
+        reviewed: reviewed,
+        warnings: keys.map { |key| Message.new(key) }
+      )
+    end
+
+    def label(result) = tax_status_pill(result).first
+
+    # Asserted on the tone and the glyph rather than on a class string, which
+    # is what these two used to compare. The helper now hands DS::Pill a tone
+    # and lets the component decide what that looks like, so a class string
+    # here would be asserting the component's implementation from a test about
+    # the report -- and would fail the day DS::Pill changed a shade, having
+    # caught nothing. The tone is the decision this module makes; the classes
+    # were never ours.
+    def tone_and_glyph(result) = tax_status_pill(result).drop(1)
+
+    test "a computed row carrying only notes is green" do
+      result = result_with("fr_deposit.note_interest_taxed_as_it_arises",
+                           "fr_securities.flat_tax_assumed")
+
+      assert_equal I18n.t("tax_reports.show.status.computed"), label(result)
+      assert_equal [ :success, "check" ], tone_and_glyph(result)
+    end
+
+    test "a computed row missing a figure the form collects is amber" do
+      result = result_with("fr_capital_and_gains.no_deducted")
+
+      assert_equal I18n.t("tax_reports.show.status.incomplete"), label(result)
+    end
+
+    # Grey, not amber. Amber says *you have something to fix*; an account whose
+    # product this module has no rule for is the module's limitation, and the
+    # reader has nothing to fix. The old helper said exactly this in a comment
+    # and then used amber anyway.
+    test "a row with no number at all is grey rather than amber" do
+      result = result_with("unknown.no_rule", tax: nil, modelled: false)
+
+      assert_equal I18n.t("tax_reports.show.status.not_computed"), label(result)
+      # A dash, not a cross. The glyph carries the same three-way distinction
+      # as the tone for a reader who cannot see the tone, and a cross would say
+      # "rejected" about a row where nothing was rejected -- the same claim the
+      # grey makes, made again in the one part of the pill that survives a
+      # monochrome screen.
+      assert_equal [ :neutral, "minus" ], tone_and_glyph(result)
+    end
+
+    test "notes are separated from the sentences that ask for something" do
+      result = result_with("fr_capital_and_gains.no_deducted",
+                           "fr_capital_and_gains.whole_wrapper_lump_sum")
+
+      warnings = tax_warnings(result)
+
+      assert_equal 1, warnings[:gap].size
+      assert_equal 1, warnings[:note].size
+    end
+
+    # `reviewed_at` was written on every save and read by nothing, which is why
+    # "à vérifier" never went away after you had verified. Opening the form and
+    # saving it is an answer to the question the form asked.
+    test "a gap about a box you looked at and left empty goes quiet once saved" do
+      key = "fr_capital_and_gains.no_deducted"
+
+      assert_equal :gap, tax_warnings(result_with(key)).keys.first
+      assert_equal :note,
+                   tax_warnings(result_with(key, reviewed: true)).keys.first
+    end
+
+    test "and the row goes green with it, because there is nothing left to ask" do
+      result = result_with("fr_capital_and_gains.no_deducted", reviewed: true)
+
+      assert_equal I18n.t("tax_reports.show.status.computed"), label(result)
+    end
+
+    # The exception, and the reason the demotion is keyed on a fact rather than
+    # on the severity alone. A marginal rate is the household's, not the
+    # account's, and no per-account form ever offered it -- so saving that form
+    # is not an answer and must not read as one.
+    test "a gap no account form could close is not quietened by saving one" do
+      result = result_with("assumptions.marginal_rate_caveat", reviewed: true)
+
+      assert_equal I18n.t("tax_reports.show.status.incomplete"), label(result)
+    end
+
+    # Rules::Composed carries the free text a household typed into its own
+    # custom rule, as a String rather than a Message. It has no key, so it has
+    # no severity to look up.
+    test "a household's own words about their own rule are a note" do
+      result = Result.new(
+        account_id: "x", account_name: "An account", currency: "EUR",
+        gross: BigDecimal(100), tax: BigDecimal(10),
+        warnings: [ "Rule copied from my accountant's note" ]
+      )
+
+      assert_equal [ :note ], tax_warnings(result).keys
+      assert_equal I18n.t("tax_reports.show.status.computed"), label(result)
+    end
+  end
+
+  # Which of the four things a row's link says, if it says anything.
+  #
+  # The pill above answers "how much attention does this row want"; this
+  # answers "and what would I do about it", and the two are not the same
+  # question. A row can be amber and have nothing a form could fix -- an unset
+  # household marginal rate lives on another screen entirely -- and a row can
+  # be green and still be worth opening, which is why "Adjust" exists at all.
+  #
+  # Built from Tax::Result rather than through the engine for the reason given
+  # above StatusPillTest: the subject is the page's reading, and routing each
+  # of these through a rule would make them fail whenever that rule changed
+  # which sentence it emits.
+  class ProfileActionTest < ActionView::TestCase
+    tests TaxReportsHelper
+
+    def result_with(*keys, account_id: "x", missing: [], modelled: true,
+                    reviewed: false)
+      Result.new(
+        account_id: account_id, account_name: "An account", currency: "EUR",
+        gross: BigDecimal(100), tax: modelled ? BigDecimal(10) : nil,
+        modelled: modelled, missing_facts: missing, reviewed: reviewed,
+        warnings: keys.map { |key| Message.new(key) }
+      )
+    end
+
+    def action(result) = tax_profile_action(result)&.first
+
+    # The state Part 4 brought into existence. Before it this account had no
+    # number and said "Declare"; now it has one, and what it wants is not the
+    # same thing. The label has to move with the figure or the page is telling
+    # a reader that nothing was computed while showing them what was.
+    test "a figure reached from a stand-in asks to be refined, not declared" do
+      result = result_with("fr_pea.computed_from_cost_basis")
+
+      assert_equal I18n.t("tax_reports.show.refine"), action(result)
+    end
+
+    # The reason tax_profile_action takes the demoted warnings rather than
+    # calling warnings_by_severity itself. Without this the pill would go green
+    # on a saved row while the link beside it went on asking for the same box,
+    # and a page that contradicts itself in two adjacent columns is worse than
+    # one that is merely wrong.
+    test "and stops asking once the household has looked at the box" do
+      result = result_with("fr_pea.computed_from_cost_basis", reviewed: true)
+
+      assert_equal I18n.t("tax_reports.show.adjust"), action(result)
+    end
+
+    test "a refusal a fact would lift asks for that fact" do
+      result = result_with("fr_capital_and_gains.no_paid_in",
+                           missing: [ :paid_in ], modelled: false)
+
+      assert_equal I18n.t("tax_reports.show.declare"), action(result)
+    end
+
+    # Amber, and yet there is nothing to refine here: the marginal rate is the
+    # household's and no per-account form has ever offered it. Offering
+    # "Refine" would send a reader to a form that cannot contain their problem.
+    test "a gap naming no box the form holds does not ask for one" do
+      result = result_with("assumptions.marginal_rate_caveat")
+
+      assert_equal I18n.t("tax_reports.show.adjust"), action(result)
+    end
+
+    # `:cost_basis` is derived from Sure's own holdings and collected by no
+    # form, so it appears in missing_facts and must not produce a link. This is
+    # the case the old `missing_facts.any?` test got wrong: it offered
+    # "Declare" on a row where declaring was impossible.
+    test "a refusal no form could lift offers nothing at all" do
+      result = result_with("fr_securities.no_cost_basis",
+                           missing: [ :cost_basis ], modelled: false)
+
+      assert_nil tax_profile_action(result)
+    end
+
+    # The totals row, and the coverage rows for products nobody holds. No
+    # account behind them, so no form to link to.
+    test "a row with no account behind it offers nothing" do
+      result = result_with(account_id: nil)
+
+      assert_nil tax_profile_action(result)
+    end
+  end
+
+  # The half-line under the rule name saying which figure the gain was measured
+  # against.
+  #
+  # Small enough to look untestable and worth testing for exactly one reason:
+  # the symbol comes from a rule, and the lookup must not interpolate it into an
+  # i18n key. A rule that one day sets `basis_source: :versements` should print
+  # nothing rather than `translation missing: ...show.source.versements` in the
+  # middle of somebody's tax figures.
+  class BasisSourceLineTest < ActionView::TestCase
+    tests TaxReportsHelper
+
+    def result_with(source)
+      Result.new(account_name: "An account", gross: BigDecimal(100),
+                 currency: "EUR", basis_source: source)
+    end
+
+    test "a gain measured against declared payments says so" do
+      assert_equal I18n.t("tax_reports.show.source.paid_in"),
+                   tax_basis_source(result_with(:paid_in))
+    end
+
+    test "a gain measured against the holdings says so" do
+      assert_equal I18n.t("tax_reports.show.source.cost_basis"),
+                   tax_basis_source(result_with(:cost_basis))
+    end
+
+    # A rule that never went through the cascade -- one written entirely in
+    # `paid_in` terms, or one for a product where the question does not arise --
+    # leaves this nil, and nil must print nothing rather than a caption
+    # qualifying a method it did not use.
+    test "a rule with no cascade behind it says nothing" do
+      assert_nil tax_basis_source(result_with(nil))
+    end
+
+    test "a source this page has no words for prints nothing, not a key" do
+      assert_nil tax_basis_source(result_with(:something_a_future_rule_sets))
+    end
+  end
+
+  # Which of the three blocks a row lands in.
+  #
+  # The states themselves are already covered by StatusPillTest above; what is
+  # tested here is that the two agree, because the whole reason `tax_row_state`
+  # exists as its own method is that a row's colour and a row's block are one
+  # decision. A copy of the conditions that drifted would file a row under
+  # "needs something from you" and paint it green.
+  class RowStateTest < ActionView::TestCase
+    tests TaxReportsHelper
+
+    def result_with(*keys, modelled: true, reviewed: false)
+      Result.new(
+        account_id: "x", account_name: "An account", currency: "EUR",
+        gross: BigDecimal(100), tax: modelled ? BigDecimal(10) : nil,
+        modelled: modelled, reviewed: reviewed,
+        warnings: keys.map { |key| Message.new(key) }
+      )
+    end
+
+    test "no figure means the last block, whatever else is true of the row" do
+      result = result_with("fr_securities.no_cost_basis", modelled: false)
+
+      assert_equal :not_computed, tax_row_state(result)
+    end
+
+    test "a surviving gap means the first block" do
+      result = result_with("fr_pea.computed_from_cost_basis")
+
+      assert_equal :incomplete, tax_row_state(result)
+    end
+
+    test "a gap the household has already answered does not" do
+      result = result_with("fr_pea.computed_from_cost_basis", reviewed: true)
+
+      assert_equal :computed, tax_row_state(result)
+    end
+
+    test "notes alone leave a row computed" do
+      result = result_with("fr_securities.flat_tax_assumed")
+
+      assert_equal :computed, tax_row_state(result)
+    end
+
+    test "every state the grouping iterates is one a row can actually be in" do
+      states = [
+        result_with("fr_securities.no_cost_basis", modelled: false),
+        result_with("fr_pea.computed_from_cost_basis"),
+        result_with
+      ].map { |result| tax_row_state(result) }
+
+      assert_equal TaxReportsHelper::STATES.to_set, states.to_set
+    end
+
+    # The pill and the block are read off the same answer, so a row cannot be
+    # sorted into one state and painted as another. Asserted rather than assumed
+    # because the pill used to own these conditions outright.
+    test "the pill agrees with the block for every state" do
+      {
+        result_with("fr_securities.no_cost_basis", modelled: false) => "not_computed",
+        result_with("fr_pea.computed_from_cost_basis") => "incomplete",
+        result_with => "computed"
+      }.each do |result, state|
+        assert_equal state.to_sym, tax_row_state(result)
+        assert_equal I18n.t("tax_reports.show.status.#{state}"),
+                     tax_status_pill(result).first
+      end
     end
   end
 end

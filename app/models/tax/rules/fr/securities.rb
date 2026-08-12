@@ -16,23 +16,32 @@ module Tax
         # One term, and no clock: a CTO has no holding period that changes the
         # rate.
         #
-        # The formula names cost basis because that is the base in law.
-        # #acquisition_cost below prefers a declared figure where one exists,
-        # which is a rule about where the number comes from rather than about
-        # what is taxed, so it is not a term. The equivalence test exercises
-        # this rule on accounts with nothing declared, and says so.
+        # The term is `plus_value` rather than `gain_over_cost_basis`, which is
+        # a change of spelling and not of arithmetic: this rule has always
+        # preferred a declared figure over the holdings' own, and the formula
+        # used to say only half of that. The half it left out was the half the
+        # equivalence test then had to be told to skip. Now the formula says
+        # what the rule does, and the test exercises declared and undeclared
+        # accounts alike.
+        #
+        # Note which way round the preference runs here compared with the PEA.
+        # For a CTO the cost basis *is* the base in law and a declared figure
+        # is the household correcting it; for a PEA the versements are the base
+        # and the cost basis is a stand-in. Same cascade, opposite meanings,
+        # which is why each rule says its own sentence about which it got.
         formula terms: [
-          { base: "gain_over_cost_basis", rate: "flat_tax" }
+          { base: "plus_value", rate: "flat_tax" }
         ]
 
         def call(subject, on:, rates:, assumptions:)
-          base, source = acquisition_cost(subject)
+          base, source = subject.plus_value_base
 
           if base.nil?
             return refuse(
               subject,
               reason: msg("fr_securities.no_cost_basis"),
-              needs: msg("facts.acquisition_cost")
+              needs: msg("facts.acquisition_cost"),
+              missing: [ :cost_basis ]
             )
           end
 
@@ -43,7 +52,7 @@ module Tax
           loss = subject.loss_against(base)
           warnings << msg("fr_securities.latent_loss", loss: amount(loss)) if loss.positive?
 
-          warnings << msg("fr_securities.declared_cost") if source == :declared
+          warnings << msg("fr_securities.declared_cost") if source == :paid_in
 
           # Whole percent here, unlike everywhere else: the sentence says
           # "roughly", and a figure given to a tenth reads as a threshold
@@ -55,19 +64,10 @@ module Tax
             taxable_base: gain,
             tax: cents(gain * pfu),
             basis: msg("fr_securities.basis", rate: percent(pfu), cost: amount(base)),
+            basis_source: source,
             warnings: warnings
           )
         end
-
-        private
-          # A declared figure wins over a computed one -- the user knows things
-          # the importer does not -- but the report always says which was used.
-          def acquisition_cost(subject)
-            return [ subject.paid_in, :declared ] unless subject.paid_in.nil?
-            return [ subject.cost_basis, :holdings ] unless subject.cost_basis.nil?
-
-            [ nil, nil ]
-          end
       end
     end
   end

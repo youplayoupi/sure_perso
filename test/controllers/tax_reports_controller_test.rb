@@ -33,14 +33,45 @@ class TaxReportsControllerTest < ActionDispatch::IntegrationTest
     assert_select "body", text: /no rules for US yet/i
   end
 
-  test "an incomplete portfolio says so above the numbers, not in a footnote" do
+  test "an incomplete portfolio says so above the numbers, and names them" do
     # The fixture family holds a Crypto account and a Property, both of which
     # this module deliberately declines to model, so the report is incomplete
     # by construction.
+    #
+    # Asserting on a name rather than on the banner's own wording, because the
+    # point of the banner is not that it appears -- a count did that -- but that
+    # a reader can tell from it which of nine rows to go and look at.
     get tax_report_path
 
     assert_response :ok
-    assert_select "body", text: /could not be computed/
+    assert_select "body", text: /No figure for .*123 Maybe Court/
+  end
+
+  # The table is grouped, and the groups come in the order a reader would want
+  # to work through them: what needs them, then what is settled, then what this
+  # module cannot do.
+  #
+  # Asserted on the headings rather than on the rows under them, because the
+  # order is the claim. A test that counted rows per block would pass on a page
+  # that put "no figure for these" at the top, which is the one arrangement this
+  # is meant to rule out.
+  #
+  # The fixture family has nothing incomplete -- no declarable fact is missing
+  # on the one account with a rule -- so that block is absent, which is also
+  # part of the claim: an empty block prints no heading rather than a heading
+  # over nothing.
+  test "the table is grouped, most actionable first" do
+    get tax_report_path
+
+    # The trailing count is dropped here rather than asserted, because it is a
+    # fact about the fixtures and would have to be re-derived every time one
+    # changed -- and the thing being tested is the order, not the arithmetic.
+    headings = css_select("tbody th").map { |th| th.text.squish.sub(/ \(\d+\)\z/, "") }
+
+    assert_equal [
+      I18n.t("tax_reports.show.block.computed"),
+      I18n.t("tax_reports.show.block.not_computed")
+    ], headings
   end
 
   test "the net figure is relabelled, not merely footnoted, when incomplete" do
@@ -239,6 +270,10 @@ class TaxReportsControllerTest < ActionDispatch::IntegrationTest
     taxable_account
 
     before = tax_totals
+    # The second figure is the tax. It reads positionally because the headline
+    # is a fixed set in a fixed order -- net, tax, rate, gross, unmodelled --
+    # and naming each of the five would be five more things to keep in step for
+    # a test that only needs to know one of them is not zero.
     assert_not_equal "€0.00", before.second, "nothing is taxed, so nothing can be corrected"
 
     # Dated to the entry currently in force, not to the start of the schedule.
@@ -296,11 +331,19 @@ class TaxReportsControllerTest < ActionDispatch::IntegrationTest
     # The four headline figures, read off the page rather than out of an
     # instance variable, so the assertion is about what the household is shown
     # and not about how the controller happens to be wired.
+    #
+    # Selected on a test id rather than on a type-scale class, which is what
+    # this used to do. The headline is no longer one size: the net sits in the
+    # hero at 4xl and the other three in cards at 2xl, and a selector naming a
+    # size would go on passing its own `figures.any?` guard while quietly
+    # comparing three figures instead of four -- or, as it did here, none at
+    # all. The id says what the element is for, so it survives the next restyle
+    # as well as this one.
     def tax_totals
       get tax_report_path
       assert_response :ok
 
-      figures = css_select("p.text-xl").map { |node| node.text.strip }
+      figures = css_select("[data-testid=tax-headline-figure]").map { |node| node.text.strip }
       assert figures.any?, "the report rendered no headline figures at all"
       figures
     end

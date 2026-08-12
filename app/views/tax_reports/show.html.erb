@@ -30,111 +30,352 @@
     %>
     <% unless @snapshot.complete? %>
       <%= render DS::Alert.new(variant: :warning) do %>
-        <p class="font-medium">
-          <%= t(".incomplete_title", count: @snapshot.incomplete_count) %>
+        <%# `privacy-sensitive` because this line now carries account names --
+            see Tax::Snapshot#incomplete for why it names them. Nothing new is
+            revealed that the table below does not already reveal, but it has to
+            go under the same blur, or toggling privacy would hide the table and
+            leave the summary of it in plain sight. %>
+        <p class="font-medium privacy-sensitive">
+          <%= t(".incomplete_title",
+                accounts: @snapshot.incomplete.map(&:account_name).to_sentence) %>
         </p>
         <p class="text-sm mt-1"><%= t(".incomplete_body") %></p>
       <% end %>
     <% end %>
 
-    <%# One column, then two, then four -- and only four once the container is
-        genuinely wide enough for four currency figures side by side. The
-        labels are the long part ("Net (upper bound)", "Rate on what was
-        computed"), so the value is allowed to wrap rather than being clipped:
-        a half-printed amount on a tax page reads as a different amount. %>
-    <div class="grid grid-cols-1 @xl:grid-cols-2 @5xl:grid-cols-4 gap-4">
-      <% [
-           [ t(".gross"), tax_money(@snapshot.gross, @currency), nil, true ],
-           [ t(".tax"), tax_money(@snapshot.tax, @currency), nil, true ],
-           [ @snapshot.complete? ? t(".net") : t(".net_upper_bound"),
-             tax_money(@snapshot.net, @currency), @snapshot.complete? ? nil : "text-warning", true ],
-           [ @snapshot.complete? ? t(".effective_rate") : t(".modelled_rate"),
-             tax_percent(@snapshot.complete? ? @snapshot.effective_rate : @snapshot.modelled_effective_rate),
-             nil, false ]
-         ].each do |label, value, tone, sensitive| %>
-        <div class="bg-container rounded-xl shadow-border-xs px-5 py-4 space-y-1">
-          <p class="text-xs uppercase tracking-wide text-secondary"><%= label %></p>
+    <%# The headline is one figure with a picture under it, and four smaller
+        ones beside it, rather than four equal cards.
+
+        Four equal cards made the net -- the only number most readers came for
+        -- the third of four things set in the same type, and left them to work
+        out which one answered their question. Giving it the large card, the
+        large type and the bar says it instead. The 3/2 split of the five
+        columns is the mock's 1.4/1; container columns, not viewport ones, for
+        the reason at the top of this file. %>
+    <div class="grid grid-cols-1 @3xl:grid-cols-5 gap-4">
+      <%# `justify-between` because the grid stretches this card to the height
+          of the two rows of small ones beside it, and a hero that draws its
+          content into the top two-thirds and leaves the rest blank looks like
+          something failed to load. The label and figure stay at the top, the
+          bar falls to the bottom, and the gap between them is the card. %>
+      <%= render DS::Card.new(class: "@3xl:col-span-3 justify-between") do %>
+        <p class="text-xs font-semibold uppercase tracking-widest text-subdued">
+          <%= @snapshot.complete? ? t(".net") : t(".net_upper_bound") %>
+        </p>
+
+        <div class="mt-2.5 flex flex-wrap items-end gap-x-3 gap-y-1">
           <%# `privacy-sensitive` because this is the one page in the app that
               states, in one number, what the household is worth after tax.
-              Everything else that prints a balance already blurs; leaving
-              this out would make privacy mode a lie. The rate is not blurred:
-              it is a percentage, and it tells a shoulder-surfer nothing. %>
-          <p class="text-xl font-medium tabular-nums break-words <%= tone || "text-primary" %> <%= "privacy-sensitive" if sensitive %>">
-            <%= value %>
+              Everything else that prints a balance already blurs; leaving this
+              out would make privacy mode a lie.
+
+              Toned amber, at this size, when the snapshot is incomplete. The
+              label above already says "upper bound"; the tone is there because
+              a figure set 48px tall in confident green is read before its
+              label is, and this one is not an answer. %>
+          <p data-testid="tax-headline-figure"
+             class="font-mono text-4xl @xl:text-5xl font-semibold tracking-tight tabular-nums privacy-sensitive <%= @snapshot.complete? ? "text-success" : "text-warning" %>">
+            <%= tax_money(@snapshot.net, @currency) %>
+          </p>
+          <p class="pb-1 text-sm text-secondary privacy-sensitive">
+            <%= t(".of_gross_html", amount: tag.span(tax_money(@snapshot.gross, @currency), class: "font-mono tabular-nums text-primary")) %>
           </p>
         </div>
+
+        <%# What is kept against what is taken, to scale.
+
+            The one thing on the page that answers "is this a lot?" without
+            the reader having to divide two six-figure numbers in their head,
+            and the reason the rate card beside it is not enough on its own:
+            13% is a fact, and a bar that is one-eighth red is the same fact
+            arriving before it has been read.
+
+            Drawn from the same two figures the cards print, so it cannot
+            drift from them -- and not drawn at all when there is no gross, so
+            an empty portfolio gets no bar rather than a full red one. %>
+        <% if (keep = tax_keep_share(@snapshot.gross, @snapshot.tax)) %>
+          <% widths = tax_split_widths(@snapshot.gross, @snapshot.tax) %>
+          <div class="mt-4 flex h-2 overflow-hidden rounded-full bg-surface-inset" aria-hidden="true">
+            <div class="bg-green-500" style="width: <%= widths.first %>"></div>
+            <div class="bg-red-500" style="width: <%= widths.last %>"></div>
+          </div>
+          <%# Not blurred, and deliberately: these are percentages, and a
+              percentage tells a shoulder-surfer nothing about the amount it
+              is a percentage of. Blurring them would cost the one part of the
+              headline that stays readable with privacy on. %>
+          <div class="mt-2 flex flex-wrap justify-between gap-x-4 gap-y-1 text-xs text-secondary">
+            <span class="inline-flex items-center gap-1.5">
+              <span class="inline-block h-2 w-2 rounded-full bg-green-500"></span>
+              <%= t(".keep_share", percent: tax_percent(keep)) %>
+            </span>
+            <span class="inline-flex items-center gap-1.5">
+              <span class="inline-block h-2 w-2 rounded-full bg-red-500"></span>
+              <%= t(".tax_share", percent: tax_percent(1 - keep)) %>
+            </span>
+          </div>
+        <% end %>
       <% end %>
+
+      <%# The four supporting figures, two by two.
+
+          The last of them is `unmodelled_gross`, which until now was computed
+          and shown nowhere. It is the size of this module's own refusal, in
+          euros, and it belongs next to the net it is the reason for: the
+          banner above names the accounts, and this says what they are worth.
+          Printed as a zero when everything was computed rather than hidden,
+          because a card that vanishes when it has nothing to report cannot be
+          distinguished from a page that never had the card. %>
+      <%# One column until the container can hold two. Two 240px cards look
+          fine in a mock drawn at desk width and are not fine at 475px, which
+          is what this column is when both of Sure's sidebars are open: the
+          amounts wrapped mid-number there, and "€678,200.0" over "0" is a
+          different number to anyone reading quickly. %>
+      <div class="@3xl:col-span-2 grid grid-cols-1 @xl:grid-cols-2 gap-4">
+        <% [
+             [ t(".tax"), tax_money(@snapshot.tax, @currency), "text-destructive", true ],
+             [ @snapshot.complete? ? t(".effective_rate") : t(".modelled_rate"),
+               tax_percent(@snapshot.complete? ? @snapshot.effective_rate : @snapshot.modelled_effective_rate),
+               "text-primary", false ],
+             [ t(".gross"), tax_money(@snapshot.gross, @currency), "text-primary", true ],
+             [ t(".unmodelled_gross"), tax_money(@snapshot.unmodelled_gross, @currency),
+               @snapshot.complete? ? "text-subdued" : "text-warning", true ]
+           ].each do |label, value, tone, sensitive| %>
+          <%= render DS::Card.new do %>
+            <p class="text-xs font-semibold uppercase tracking-widest text-subdued"><%= label %></p>
+            <%# `break-words` because the value must be allowed to wrap rather
+                than be clipped: a half-printed amount on a tax page reads as a
+                different amount, where a wrapped one merely reads badly.
+
+                `mt-auto` because the labels are the long part ("Rate on what
+                was computed" is two lines where "Tax" is one) and DS::Card is
+                a flex column, so pushing the value to the bottom lines the
+                four figures up with each other instead of with the bottom of
+                whichever label happened to wrap. %>
+            <p data-testid="tax-headline-figure"
+               class="mt-auto pt-2 font-mono text-2xl font-semibold tabular-nums break-words <%= tone %> <%= "privacy-sensitive" if sensitive %>">
+              <%= value %>
+            </p>
+          <% end %>
+        <% end %>
+      </div>
     </div>
 
     <%# ---- Account by account -------------------------------------------- %>
-    <%= render DS::Card.new do %>
-      <div class="p-4 border-b border-secondary">
+    <%# A plain card shell rather than DS::Card, which bakes in `p-5`. The mock
+        runs the header rule, every row rule and the totals band edge to edge,
+        and 20px of padding around a table stops all of them short of the
+        corner. `overflow-hidden` is what lets the totals row sit in the
+        rounded bottom corners without squaring them off. %>
+    <section class="bg-container rounded-2xl shadow-border-xs overflow-hidden">
+      <div class="px-5 py-4 border-b border-secondary">
         <h2 class="font-medium text-primary"><%= t(".per_account") %></h2>
       </div>
 
       <% if @snapshot.results.empty? %>
-        <p class="p-4 text-sm text-secondary"><%= t(".no_accounts") %></p>
+        <p class="px-5 py-4 text-sm text-secondary"><%= t(".no_accounts") %></p>
       <% else %>
         <div class="overflow-x-auto">
           <table class="w-full text-sm">
-            <thead class="text-xs uppercase tracking-wide text-secondary">
+            <thead class="text-xs font-semibold uppercase tracking-wider text-subdued">
+              <%# `whitespace-nowrap`, because "Eff. rate" broke over two lines
+                  and took the whole header band down with it while five of its
+                  six neighbours sat on one. The column widths come from
+                  TaxReportsHelper::COLUMN_WIDTHS, which also decides which of
+                  the seven survive a narrow container. %>
               <tr class="border-b border-secondary">
-                <th class="text-left  font-normal px-4 py-2"><%= t(".col_account") %></th>
-                <th class="text-left  font-normal px-4 py-2"><%= t(".col_rule") %></th>
-                <th class="text-right font-normal px-4 py-2"><%= t(".gross") %></th>
-                <th class="text-right font-normal px-4 py-2"><%= t(".col_base") %></th>
-                <th class="text-right font-normal px-4 py-2"><%= t(".tax") %></th>
-                <th class="text-right font-normal px-4 py-2"><%= t(".net") %></th>
-                <th class="text-left  font-normal px-4 py-2"></th>
+                <th class="text-left  font-semibold px-5 py-3 <%= tax_column_class(:account) %>"><%= t(".col_account") %></th>
+                <th class="text-left  font-semibold px-5 py-3 <%= tax_column_class(:rule) %>"><%= t(".col_rule") %></th>
+                <th class="text-right font-semibold px-5 py-3 whitespace-nowrap <%= tax_column_class(:gross) %>"><%= t(".gross") %></th>
+                <th class="text-right font-semibold px-5 py-3 whitespace-nowrap <%= tax_column_class(:base) %>"><%= t(".col_base") %></th>
+                <th class="text-right font-semibold px-5 py-3 whitespace-nowrap <%= tax_column_class(:tax) %>"><%= t(".tax") %></th>
+                <th class="text-right font-semibold px-5 py-3 whitespace-nowrap <%= tax_column_class(:rate) %>"><%= t(".col_rate") %></th>
+                <th class="text-right font-semibold px-5 py-3 whitespace-nowrap <%= tax_column_class(:net) %>"><%= t(".net") %></th>
               </tr>
             </thead>
             <tbody>
-              <% @snapshot.results.each do |r| %>
-                <% status, tone = tax_status_pill(r) %>
-                <tr class="border-b border-secondary/50 align-top">
-                  <td class="px-4 py-3">
-                    <p class="text-primary font-medium"><%= r.account_name %></p>
-                    <p class="text-xs text-secondary">
-                      <%= [ r.accountable_type, r.subtype ].compact.join(" / ") %>
-                    </p>
-                  </td>
-                  <td class="px-4 py-3 text-secondary"><%= tax_message(r.basis) %></td>
-                  <td class="px-4 py-3 text-right tabular-nums privacy-sensitive"><%= tax_money(r.gross, r.currency) %></td>
-                  <td class="px-4 py-3 text-right tabular-nums privacy-sensitive"><%= tax_money(r.taxable_base, r.currency) %></td>
-                  <td class="px-4 py-3 text-right tabular-nums privacy-sensitive"><%= tax_money(r.tax, r.currency) %></td>
-                  <td class="px-4 py-3 text-right tabular-nums privacy-sensitive"><%= tax_money(r.net, r.currency) %></td>
-                  <td class="px-4 py-3">
-                    <div class="flex items-center gap-2">
-                      <span class="text-xs px-2 py-0.5 rounded-full <%= tone %>"><%= status %></span>
-                      <% if r.account_id.present? %>
-                        <%= link_to t(".declare"),
-                                    edit_tax_account_profile_path(account_id: r.account_id),
-                                    class: "text-xs text-link hover:underline" %>
-                      <% end %>
+              <%# Three blocks: rows that want something, rows that are done,
+                  rows there is no number for. The controller has already
+                  grouped and sorted them -- see #rows_by_state -- and hands
+                  each row its warnings sorted once, so that a row's colour, the
+                  block it sits in and the sentences underneath it all come from
+                  one reading of the same list.
+
+                  A block with nothing in it prints no heading rather than an
+                  empty one. "Nothing needs your attention" is worth saying, but
+                  the place to say it is the banner above, once, not as a
+                  caption over a gap in a table. %>
+              <% @rows.each do |state, rows| %>
+                <% next if rows.empty? %>
+                <tr class="border-b border-secondary">
+                  <%# `colgroup`, because this heading applies to the columns of
+                      the rows beneath it rather than to a row of its own. A
+                      screen reader announcing it as a cell in a data row would
+                      read the block name as though it were an account. %>
+                  <th colspan="7" scope="colgroup"
+                      class="px-5 pt-6 pb-2 text-left text-xs font-semibold uppercase tracking-wider text-subdued">
+                    <%= t(".block.#{state}") %>
+                    <span class="font-normal">(<%= rows.size %>)</span>
+                  </th>
+                </tr>
+              <% rows.each do |(r, warnings)| %>
+                <% status, pill_tone, pill_icon = tax_status_pill(r, warnings) %>
+                <% icon_name, icon_color = tax_account_tile(r) %>
+                <tr class="border-b border-alpha-black-100 align-top">
+                  <%# Everything the row asks of the reader now lives in this
+                      one cell: what the account is, how much of it survives,
+                      what state it is in and the one thing they could do about
+                      it. That is the mock's arrangement and it is better than
+                      the column it replaces -- a status and an action stranded
+                      seven columns away from the name they belong to, with the
+                      whole ledger between them. %>
+                  <td class="px-5 py-4 <%= tax_column_class(:account) %>">
+                    <div class="flex items-start gap-3">
+                      <%# Type-derived, so nothing here survives the privacy
+                          blur that shouldn't -- see #tax_account_tile. %>
+                      <%= render DS::FilledIcon.new(variant: :default, icon: icon_name,
+                                                    hex_color: icon_color, size: "md") %>
+                      <div class="min-w-0">
+                        <p class="font-medium text-primary privacy-sensitive"><%= r.account_name %></p>
+                        <p class="text-xs text-subdued">
+                          <%= [ r.accountable_type, r.subtype ].compact.join(" / ") %>
+                        </p>
+
+                        <%# The same bar as the headline, one account wide.
+                            Absent rather than empty on a row with no figure,
+                            which is the whole point of drawing it: the blocks
+                            already sort the rows, and a reader skimming the
+                            bars sees at a glance which accounts the tax
+                            actually falls on. %>
+                        <% if (widths = tax_split_widths(r.gross, r.tax)) %>
+                          <div class="mt-2 flex h-1.5 w-32 overflow-hidden rounded-full bg-surface-inset" aria-hidden="true">
+                            <div class="bg-green-500" style="width: <%= widths.first %>"></div>
+                            <div class="bg-red-500" style="width: <%= widths.last %>"></div>
+                          </div>
+                        <% end %>
+
+                        <%# DS::Pill in badge mode, not a hand-rolled span: it
+                            is the app's own status-badge shape, and it brings
+                            the dark palette and the border the hand-rolled one
+                            never had. `tax_profile_action` decides whether
+                            there is a link at all; it returns nil for rows
+                            where no form would help. %>
+                        <div class="mt-2.5 flex flex-wrap items-center gap-2">
+                          <%= render DS::Pill.new(label: status, tone: pill_tone, icon: pill_icon,
+                                                  marker: false, style: :soft) %>
+                          <% if (action = tax_profile_action(r, warnings)) %>
+                            <%= link_to action.first,
+                                        edit_tax_account_profile_path(account_id: r.account_id),
+                                        class: "rounded-md border border-secondary px-2.5 py-1 text-xs font-medium text-primary hover:bg-surface-hover" %>
+                          <% end %>
+                        </div>
+                      </div>
                     </div>
                   </td>
+                  <td class="px-5 py-4 text-secondary <%= tax_column_class(:rule) %>">
+                    <%= tax_message(r.basis) %>
+                    <% if (source = tax_basis_source(r)) %>
+                      <p class="text-xs text-subdued"><%= source %></p>
+                    <% end %>
+                  </td>
+                  <%# Mono and tabular down every numeric column, which is the
+                      mock's one non-negotiable typographic rule and the reason
+                      it is worth following: figures in a ledger are read by
+                      comparing digits in the same position down the column,
+                      and a proportional font moves them. %>
+                  <td class="px-5 py-4 text-right font-mono tabular-nums whitespace-nowrap text-primary privacy-sensitive <%= tax_column_class(:gross) %>"><%= tax_money(r.gross, r.currency) %></td>
+                  <td class="px-5 py-4 text-right font-mono tabular-nums whitespace-nowrap <%= r.taxable_base.nil? ? "text-subdued" : "text-secondary" %> privacy-sensitive <%= tax_column_class(:base) %>"><%= tax_money(r.taxable_base, r.currency) %></td>
+                  <%# Red, and no minus sign. The mock prints "−€11,748"; this
+                      prints "€11,748" in the tone that means money leaving,
+                      because `tax_money` formats a magnitude and a view that
+                      prepends a sign to somebody's tax figure is a view that
+                      has started doing arithmetic. %>
+                  <td class="px-5 py-4 text-right font-mono tabular-nums whitespace-nowrap <%= r.tax.nil? ? "text-subdued" : "text-destructive" %> privacy-sensitive <%= tax_column_class(:tax) %>"><%= tax_money(r.tax, r.currency) %></td>
+                  <%# Not blurred: a rate is a ratio, and it says nothing about
+                      the amount it is a ratio of. Same call as the headline. %>
+                  <td class="px-5 py-4 text-right font-mono tabular-nums whitespace-nowrap text-secondary <%= tax_column_class(:rate) %>"><%= tax_percent(tax_row_rate(r)) %></td>
+                  <td class="px-5 py-4 text-right font-mono tabular-nums whitespace-nowrap font-semibold text-primary privacy-sensitive <%= tax_column_class(:net) %>"><%= tax_money(r.net, r.currency) %></td>
                 </tr>
 
                 <%# Warnings sit under their own row, not in a footnote pile at
                     the bottom. A caveat three screens away from the number it
-                    qualifies is a caveat nobody reads. %>
-                <% if r.warnings.any? %>
-                  <tr class="border-b border-secondary/50">
-                    <td colspan="7" class="px-4 pb-3 -mt-1">
+                    qualifies is a caveat nobody reads.
+
+                    But a note stacked above the figure it qualifies is noise,
+                    and eight rows of it is a page nobody reads either. So the
+                    two sentences that ask something of the reader -- there is
+                    no number, or there is a number and a box left empty --
+                    keep the position they had, and everything that is merely
+                    true goes behind a count. Collapsed rather than dropped:
+                    "the flat tax is assumed" is exactly the kind of thing
+                    somebody eventually needs to find, and finding it should
+                    not require reading the source. %>
+                <% if warnings[:blocker].present? || warnings[:gap].present? %>
+                  <tr class="border-b border-alpha-black-100">
+                    <td colspan="7" class="px-5 pb-4">
                       <ul class="text-xs text-secondary space-y-1 list-disc list-inside">
-                        <% r.warnings.each do |w| %>
+                        <% Array(warnings[:blocker]).each do |w| %>
                           <li><%= tax_message(w) %></li>
+                        <% end %>
+                        <% Array(warnings[:gap]).each do |w| %>
+                          <li class="text-warning"><%= tax_message(w) %></li>
                         <% end %>
                       </ul>
                     </td>
                   </tr>
                 <% end %>
+
+                <% if warnings[:note].present? %>
+                  <tr class="border-b border-alpha-black-100">
+                    <td colspan="7" class="px-5 pb-4">
+                      <details class="text-xs text-subdued">
+                        <summary class="cursor-pointer hover:text-secondary"><%= t(".notes_count", count: warnings[:note].size) %></summary>
+                        <ul class="mt-1 space-y-1 list-disc list-inside">
+                          <% warnings[:note].each do |w| %>
+                            <li><%= tax_message(w) %></li>
+                          <% end %>
+                        </ul>
+                      </details>
+                    </td>
+                  </tr>
+                <% end %>
+              <% end %>
               <% end %>
             </tbody>
+
+            <%# The totals band, which the mock adds and the page did not have.
+
+                Worth having because the cards above total the portfolio and
+                the rows below total nothing, so a reader wanting to check that
+                the headline is the sum of the ledger had to add nine numbers
+                by hand. In a `tfoot`, not a last row of `tbody`, so a screen
+                reader announces it as a summary and the block grouping above
+                is not broken by a row belonging to no block.
+
+                The base column is deliberately blank. Summing it would mean
+                adding a PEA's gain to a PER's versements-plus-gain, which are
+                bases under different rules and different arithmetic; the sum
+                exists as a number and means nothing at all. Everything else on
+                this page refuses to print a figure it cannot stand behind, and
+                a column total is not the place to make the one exception. %>
+            <tfoot class="bg-container-inset border-t border-secondary">
+              <tr>
+                <th scope="row" class="px-5 py-4 text-left text-sm font-semibold text-primary <%= tax_column_class(:account) %>"><%= t(".total") %></th>
+                <td class="<%= tax_column_class(:rule) %>"></td>
+                <td class="px-5 py-4 text-right font-mono tabular-nums whitespace-nowrap font-semibold text-primary privacy-sensitive <%= tax_column_class(:gross) %>"><%= tax_money(@snapshot.gross, @currency) %></td>
+                <td class="<%= tax_column_class(:base) %>"></td>
+                <td class="px-5 py-4 text-right font-mono tabular-nums whitespace-nowrap font-semibold text-destructive privacy-sensitive <%= tax_column_class(:tax) %>"><%= tax_money(@snapshot.tax, @currency) %></td>
+                <td class="px-5 py-4 text-right font-mono tabular-nums whitespace-nowrap font-semibold text-secondary <%= tax_column_class(:rate) %>"><%= tax_percent(@snapshot.effective_rate) %></td>
+                <%# Amber rather than green when the snapshot is incomplete, for
+                    the same reason the headline is: this cell is the headline
+                    again, at the bottom of the evidence for it, and the two
+                    must not disagree about how much they can be trusted. %>
+                <td class="px-5 py-4 text-right font-mono tabular-nums whitespace-nowrap font-bold <%= @snapshot.complete? ? "text-success" : "text-warning" %> privacy-sensitive <%= tax_column_class(:net) %>"><%= tax_money(@snapshot.net, @currency) %></td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       <% end %>
-    <% end %>
+    </section>
 
     <%# ---- Disagreements with Sure's own classification ------------------- %>
     <% if @audit.present? %>
@@ -182,7 +423,13 @@
             on the settings page, which is where a rule can actually be set. %>
         <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-1 text-sm">
           <% @coverage_held.each do |e| %>
-            <div class="flex items-baseline justify-between gap-2 py-1 border-b border-secondary/30">
+            <%# `border-alpha-black-100`, not `border-secondary/30`. The `/N`
+                modifier resolves on theme colours only; `border-secondary` is
+                a custom utility from the tokens' `utility.*` group, so the
+                class was silently dropped and these rows have been drawing no
+                divider at all. See design/tokens/README.md, "Alpha modifiers
+                in views". %>
+            <div class="flex items-baseline justify-between gap-2 py-1 border-b border-alpha-black-100">
               <span class="<%= e.covered? ? "text-primary" : "text-secondary" %>">
                 <%= e.label %>
                 <% if e.custom? %>

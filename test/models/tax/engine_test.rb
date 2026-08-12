@@ -224,14 +224,48 @@ module Tax
       assert_operator just_under.tax, :>, just_over.tax
     end
 
-    def test_missing_paid_in_refuses_rather_than_guessing
+    # This used to be a refusal, and the change is the point of Part 4.
+    #
+    # The old behaviour was right about the arithmetic and wrong about the
+    # reader. Measuring the gain against the cost basis understates it, so the
+    # rule declined and the row stayed blank -- and a blank row tells nobody
+    # anything, least of all that the number they never saw would have been too
+    # low. Now the near-miss is used and labelled, which gives the reader
+    # something to disbelieve and a box to correct it in.
+    #
+    # What must not change is the direction of the error, so this pins it: the
+    # tax comes out on the low side, and the sentence beside it says so.
+    def test_missing_paid_in_falls_back_to_cost_basis_and_says_so
       line = apply(subject(value: d("250000.00"), paid_in: nil, cost_basis: d("150000.00")))
+
+      # 250000 - 150000 at social charges, the plan being mature.
+      assert_equal d("100000.00"), line.taxable_base
+      assert_equal d("18600.00"), line.tax
+      assert line.modelled?
+
+      assert warned?(line, "150000.0")
+      assert warned?(line, "least this plan could owe")
+
+      # A gap rather than a note: the figure stands, and declaring the
+      # versements would move it.
+      assert_equal :gap, line.warnings.find { |w|
+        w.respond_to?(:key) && w.key == "fr_pea.computed_from_cost_basis"
+      }.severity
+    end
+
+    # The refusal survives, narrowed to the case where genuinely nothing is
+    # known: no versements and no holdings to price.
+    def test_neither_figure_still_refuses
+      line = apply(subject(value: d("250000.00"), paid_in: nil, cost_basis: nil))
 
       assert_nil line.tax
       assert_nil line.net
       refute line.modelled?
-      # It must surface the cost basis and explicitly decline to use it.
-      assert warned?(line, "is not used here")
+
+      # Stated twice: once as prose for the reader, once as a symbol, so the
+      # report can decide whether to offer a link to the form without matching
+      # on a sentence that changes with the language.
+      assert_equal [ :paid_in ], line.missing_facts
     end
 
     def test_missing_opening_date_assumes_mature_and_shows_the_other_figure
@@ -241,6 +275,72 @@ module Tax
       assert warned?(line, "clock cannot be checked")
       # The alternative must be quoted, not merely hinted at.
       assert warned?(line, "31400.0")
+    end
+
+    # A lower bound settles the clock in one direction and one only.
+    #
+    # Sure knows, for an account it has held a balance on, a date the account
+    # certainly predates. That is not an opening date and Tax::SubjectBuilder
+    # is careful never to pass it as one -- but it is enough to prove a
+    # five-year clock has run, and proving it beats assuming it and asking the
+    # reader for a date in order to reach a conclusion already available.
+    def test_a_lower_bound_past_the_clock_settles_it_without_a_date
+      line = apply(mature_pea(opened_on: nil, known_since: Date.new(2015, 1, 1)))
+
+      assert_equal d("18600.00"), line.tax
+      assert warned?(line, "already held money")
+      # And it must stop asking, because there is nothing left to ask about.
+      refute warned?(line, "clock cannot be checked")
+    end
+
+    # The bound cannot settle it the other way. "At least two years old" says
+    # nothing about whether it is six, so a bound short of the clock has to
+    # fall through to the same assumption as no information at all -- and to
+    # the same request for a date.
+    #
+    # It must not fall through to the same *sentence*, though, and that is what
+    # the last two assertions are for. A reader in this state has an opening
+    # date on the account in Sure; told only that "the opening date is not
+    # declared" they will go and check, find the date, and conclude the module
+    # cannot see it. Every account in the household that reported this had an
+    # anchor dated the day it was imported, carrying its full balance -- a
+    # floor four days wide. The sentence has to name the date it declined to
+    # use, or the report reads as broken rather than as short of a fact.
+    def test_a_lower_bound_short_of_the_clock_proves_nothing
+      line = apply(mature_pea(opened_on: nil, known_since: Date.new(2024, 1, 1)))
+
+      assert_equal d("18600.00"), line.tax
+      refute warned?(line, "already held money")
+      assert warned?(line, "1 January 2024")
+      assert warned?(line, "a floor, not an opening date")
+    end
+
+    # And with no bound at all there is no date to name, so the older sentence
+    # is still the right one. Both are gaps asking for the same fact; they
+    # differ only in what they can tell the reader about why.
+    def test_no_date_and_no_bound_says_so_without_inventing_one
+      line = apply(mature_pea(opened_on: nil, known_since: nil))
+
+      assert_equal d("18600.00"), line.tax
+      assert warned?(line, "clock cannot be checked")
+      refute warned?(line, "a floor, not an opening date")
+
+      asking = line.warnings.select { |w|
+        w.respond_to?(:asks_for) && w.asks_for == :opened_on
+      }
+      assert_equal 1, asking.size, "one sentence about the clock, not two"
+      assert_equal :gap, asking.first.severity
+    end
+
+    # A declared date outranks the bound even when the two disagree, because
+    # one of them is a statement by the household and the other is an
+    # inference from a balance.
+    def test_a_declared_date_wins_over_the_bound
+      line = apply(mature_pea(opened_on: Date.new(2024, 1, 1),
+                              known_since: Date.new(2010, 1, 1)))
+
+      assert_equal (d("100000.00") * d("0.314")).round(2, half: :even), line.tax
+      assert warned?(line, "under 5")
     end
 
     def test_a_loss_is_not_taxed
@@ -283,6 +383,12 @@ module Tax
       line = apply(cto(cost_basis: nil))
       assert_nil line.tax
       refute line.modelled?
+
+      # Named, and deliberately not a fact any form collects: cost basis is
+      # derived from Sure's own holdings. A caller offering a "declare this"
+      # link intersects this list with what it can actually ask for, so this
+      # row gets an explanation rather than an invitation to fix it.
+      assert_equal [ :cost_basis ], line.missing_facts
     end
 
     def test_a_2025_valuation_uses_the_old_thirty_percent
@@ -301,6 +407,60 @@ module Tax
       assert_equal d(0), line.tax
       assert warned?(line, "Latent loss")
     end
+  end
+
+  # -------------------------------------------------------------------------
+
+  # Which figure the gain was actually measured against, reported on the result
+  # rather than left for a reader to infer.
+  #
+  # Two accounts on the same page can carry the same rule name, the same rate
+  # and the same shape of figure and mean different things by the number in the
+  # middle: one measured against what the household declared, the other against
+  # a floor this module substituted because nothing was declared. The warning
+  # says so at length, and by the time the row is otherwise fine that warning is
+  # behind a disclosure triangle -- so the substitution has to survive as a
+  # fact, not only as a sentence.
+  class BasisSourceTest < EngineTestCase
+    def test_a_declared_figure_is_reported_as_declared
+      line = apply(subject(paid_in: d(80_000), opened_on: Date.new(2010, 1, 1)))
+
+      assert_equal :paid_in, line.basis_source
+    end
+
+    def test_a_substituted_cost_basis_is_reported_as_substituted
+      line = apply(subject(paid_in: nil, cost_basis: d(80_000),
+                           opened_on: Date.new(2010, 1, 1)))
+
+      assert_equal :cost_basis, line.basis_source
+    end
+
+    # The same two answers on a CTO, where the cascade runs the same way round
+    # and means the opposite: here the cost basis is the base in law and the
+    # declared figure is the household correcting it. Which is exactly why the
+    # result carries the symbol and lets the page pick the words, rather than
+    # carrying a sentence written by whichever rule got there first.
+    def test_a_brokerage_account_reports_its_own_answer
+      assert_equal :cost_basis, apply(cto(cost_basis: d(80_000))).basis_source
+      assert_equal :paid_in,
+                   apply(cto(cost_basis: d(90_000), paid_in: d(80_000))).basis_source
+    end
+
+    # A rule that never asks the question leaves it unanswered rather than
+    # guessing. A cash balance is untaxed on withdrawal and no gain is measured
+    # against anything, so a provenance line under it would be qualifying a
+    # method that was never used.
+    def test_a_rule_with_no_gain_to_measure_reports_nothing
+      line = apply(subject(accountable_type: "Depository", subtype: "checking",
+                           product: nil, value: d(5_000)))
+
+      assert_nil line.basis_source
+    end
+
+    private
+      def cto(**overrides)
+        subject(subtype: "brokerage", product: "cto", value: d(100_000), **overrides)
+      end
   end
 
   # -------------------------------------------------------------------------
@@ -387,10 +547,47 @@ module Tax
       assert_equal d(50_000) * (d("0.30") - d("0.11")), run_rule(per).tax - cheap.tax
     end
 
-    def test_missing_paid_in_refuses
+    def test_missing_paid_in_and_no_holdings_refuses
       line = run_rule(per(paid_in: nil))
       assert_nil line.tax
       refute line.modelled?
+    end
+
+    # The substitution, and the property that makes it defensible.
+    #
+    # Where the versements are undeclared, what the holdings cost stands in for
+    # them -- in the capital term as well as in the growth term. The two
+    # together then still tax the whole value, exactly as they would with real
+    # versements, which is the invariant this pins: whatever the stand-in is,
+    # the taxable base is the value.
+    #
+    # Put the stand-in in the growth term alone, as the obvious reading of "use
+    # the cost basis for the gain" would, and a slice the size of the cost
+    # basis falls out of the calculation entirely. That is a discount, granted
+    # silently, to precisely the accounts this module knows least about.
+    def test_undeclared_versements_fall_back_to_cost_basis_in_both_terms
+      line = run_rule(per(paid_in: nil, cost_basis: d("60000.00")))
+
+      assert_equal d("80000.00"), line.taxable_base, "the two terms must still sum to the value"
+      # 60000 deducted at 30% = 18000 ; 20000 of growth at 31.4% = 6280.
+      assert_equal d("24280.00"), line.tax
+      assert warned?(line, "60000.0")
+      assert warned?(line, "most this wrapper could owe")
+    end
+
+    # And the direction of the error. The cost basis is the larger of the two
+    # figures whenever the wrapper has gained, so the stand-in moves money from
+    # the flat tax up to the household's rate. Where the household's rate is
+    # the higher of the two -- which is when the difference is worth anything
+    # -- that is an overstatement, and an overstatement is the only kind of
+    # error this module is willing to make without being asked.
+    def test_the_substitution_never_understates_at_a_rate_above_the_flat_tax
+      truth    = run_rule(per(paid_in: d("50000.00"), cost_basis: d("60000.00")),
+                          assumptions: at_rate("0.41"))
+      guessed  = run_rule(per(paid_in: nil, cost_basis: d("60000.00")),
+                          assumptions: at_rate("0.41"))
+
+      assert_operator guessed.tax, :>, truth.tax
     end
 
     # What the report totals to say how much of the bill rests on a number the

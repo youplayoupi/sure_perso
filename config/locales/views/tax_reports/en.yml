@@ -25,8 +25,23 @@ en:
       net_upper_bound: Net (upper bound)
       effective_rate: Effective rate
       modelled_rate: Rate on what was computed
-      incomplete_title: >-
-        %{count} accounts could not be computed
+      # The gross sits under the headline as a comparison rather than beside it
+      # as a peer. What the household wants off this page is one number; the
+      # gross is there so that one number can be read as a share of something.
+      of_gross_html: of %{amount} gross
+      # The two halves of the keep/tax bar. Percentages, so neither is blurred
+      # by the privacy toggle -- and phrased as what happens to the money
+      # rather than as two labelled quantities, because the bar already says
+      # "these are two quantities" and the words should add the direction.
+      keep_share: You keep %{percent}
+      tax_share: Tax %{percent}
+      # The part of the gross this module could not price. Zero, and printed
+      # anyway, when everything was computed: a card that disappears when it
+      # reads nothing leaves a reader unable to tell "nothing was skipped" from
+      # "this page does not say what was skipped".
+      unmodelled_gross: No figure for
+      total: Total
+      incomplete_title: "No figure for %{accounts}"
       incomplete_body: >-
         Their value is included in the gross but no tax is deducted for them,
         so the net above is an upper bound rather than an answer.
@@ -34,10 +49,34 @@ en:
       col_account: Account
       col_rule: Rule
       col_base: Base
+      # Shortened, because it is a column heading over six of them and the
+      # words either side are already long. The card above says it in full.
+      col_rate: Eff. rate
+      # Under the rule, not under the amount. It qualifies how the gain was
+      # measured, which is a property of the method; hung off the figure it
+      # would read as a caveat about that one number.
+      source:
+        paid_in: from the payments you declared
+        cost_basis: from what the holdings cost
+      # `check` is gone. It meant "this row has a sentence attached to it",
+      # which was true of six rows in eight and so told a reader nothing.
+      # `incomplete` means one specific thing: a box this module offers is
+      # empty, or a figure in one contradicts another, and putting it right
+      # would move the number.
       status:
         computed: Computed
-        check: Check
+        incomplete: Incomplete
         not_computed: Not computed
+      # Headings over the three blocks of the table. Longer than the pills on
+      # purpose: a pill labels one row and is read next to five others like it,
+      # a heading is read once and has room to say what the block means.
+      block:
+        incomplete: Needs something from you
+        computed: Computed
+        not_computed: No figure for these
+      notes_count:
+        one: 1 note
+        other: "%{count} notes"
       audit: Where this disagrees with how Sure classifies the account
       coverage: What this module covers
       coverage_body: >-
@@ -85,35 +124,128 @@ en:
         %{net}.
       projection_end: "%{date}: %{gross} gross, %{net} net"
       projection_end_upper_bound: "%{date}: %{gross} gross, %{net} net at most"
+      # Three labels for one link, and which one shows says what the row wants
+      # from you: `declare` when nothing was computed and a fact the form
+      # collects is why, `refine` when a figure stands but was reached from a
+      # stand-in that a fact the form collects would replace, `adjust` when the
+      # figure stands and nothing in particular is wrong with it. See
+      # TaxReportsHelper#tax_profile_action for the fourth case, where no label
+      # is shown because no form would help.
       declare: Declare
+      refine: Refine
+      adjust: Adjust
       no_accounts: No accounts in scope.
   tax:
+    # Rules say their own name and description in Ruby, and this file does not
+    # repeat them: TaxReportsHelper#tax_rule_label falls back to the engine's
+    # English, so a rule added tomorrow is legible before anyone writes a line
+    # here. What a rule does have to say in a locale file is what it wants from
+    # the reader, because that changes with the product even when the field
+    # does not.
+    #
+    # Only the pairs that genuinely differ. An unwritten key falls back to the
+    # generic hint under `profiles.fields`, which is already the right sentence
+    # wherever a rule has nothing particular to add -- so this list stays the
+    # exceptions rather than growing into the cross product of rules and facts.
+    rules:
+      fr_pea:
+        facts:
+          paid_in:
+            hint: >-
+              Everything you have ever paid into the plan from outside it. The
+              gain is measured against this, not against what the securities
+              inside cost: buying and selling within a PEA moves the cost of
+              the holdings without a euro being paid in.
+          opened_on:
+            hint: >-
+              The date of the first payment into the plan, which is what starts
+              the clock — not the date the plan was signed. Five years from it
+              the plan owes social levies only instead of the full flat tax,
+              which on a large gain is the difference between 17.2% and 30%.
+      fr_capital_and_gains:
+        facts:
+          paid_in:
+            hint: >-
+              Everything you have ever paid into the contract. A lump-sum exit
+              taxes the payments and the growth on them under two different
+              rules, so this is the figure that separates them.
+          paid_in_deducted:
+            hint: >-
+              The part of those payments you deducted from your taxable income
+              in the year you made them. That part is taxed as income when it
+              comes back out; the rest is not taxed again. Blank assumes all of
+              it, which is the higher-tax reading.
+      fr_capital_and_gains_household:
+        facts:
+          paid_in:
+            hint: >-
+              Everything you have ever paid into the contract. A lump-sum exit
+              taxes the payments and the growth on them under two different
+              rules, so this is the figure that separates them.
+          paid_in_deducted:
+            hint: >-
+              The part of those payments you deducted from your taxable income
+              in the year you made them. That part is taxed as income when it
+              comes back out; the rest is not taxed again. Blank assumes all of
+              it, which is the higher-tax reading.
     profiles:
+      # Keyed by fact rather than by screen, so that a label and its hint are
+      # written once. Rules override these through `rules.<id>.facts.<fact>`
+      # where they mean something different by the same field.
+      fields:
+        product:
+          label: Product
+          from_sure: Use Sure's classification
+          hint: >-
+            Only needed when Sure's own subtype is not specific enough. A Livret
+            A, an LDDS and an ordinary taxable livret are all "savings" to Sure.
+        paid_in:
+          label: Total paid in (%{currency})
+          hint: >-
+            Everything you have ever paid into this wrapper. This is not the
+            cost basis of what you hold now — reinvest a dividend and cost basis
+            rises while payments in do not.
+        paid_in_deducted:
+          label: Of which deducted from taxable income (%{currency})
+          hint: >-
+            For pension wrappers: the part of your payments you deducted from
+            taxable income. Blank assumes all of it, which is the higher-tax
+            assumption.
+        opened_on:
+          label: Date of first payment
+          hint: >-
+            The date of the first payment, which is what starts a five-year
+            clock, not the date the contract was signed.
+          from_sure: >-
+            Sure has %{date} as this account's opening date, and that is the
+            date used. Fill this in only to override it.
+          known_since: >-
+            Sure has this account holding money on %{date}, so it was opened on
+            or before then. That is a floor, not an opening date, and it is not
+            enough on its own where a clock is close.
       edit:
         title: Tax facts for %{account}
         intro: >-
-          Three things this module needs that Sure has nowhere to store. Leave
-          anything you do not know blank: blank means unknown, and unknown is
-          reported as unknown. It is never treated as zero.
-        paid_in_label: Total paid in (%{currency})
-        paid_in_hint: >-
-          Everything you have ever paid into this wrapper. This is not the cost
-          basis of what you hold now — reinvest a dividend and cost basis rises
-          while payments in do not.
-        opened_on_label: Date of first payment
-        opened_on_hint: >-
-          The date of the first payment, which is what starts a five-year clock,
-          not the date the contract was signed.
-        product_label: Product
-        product_from_sure: Use Sure's classification
-        product_hint: >-
-          Only needed when Sure's own subtype is not specific enough. A Livret A,
-          an LDDS and an ordinary taxable livret are all "savings" to Sure.
-        deducted_label: Of which deducted from taxable income (%{currency})
-        deducted_hint: >-
-          For pension wrappers: the part of your payments you deducted from
-          taxable income. Blank assumes all of it, which is the higher-tax
-          assumption.
+          What this module needs for this account and Sure has nowhere to store.
+          Leave anything you do not know blank: blank means unknown, and unknown
+          is reported as unknown. It is never treated as zero.
+        # Reached only where no rule resolved at all — an unmodelled product,
+        # or a country with no rate file. Every rule that does resolve asks at
+        # least which product this is. So this cannot say "the rule reaches its
+        # answer without you", which is what it used to say: there is no rule
+        # and there is no answer, and the honest sentence says so. Attaching
+        # one is a different screen, and this points at it rather than leaving
+        # a reader on an empty form wondering what they did wrong.
+        intro_nothing_needed: >-
+          Nothing is asked for here, because no rule is attached to this
+          account and no figure you could type would produce one. You can write
+          a rule for this product on the Taxes screen; anything you have
+          already declared is kept in the meantime.
+        stale_facts_hint: >-
+          Kept but not used by the rule currently attached to this account.
+          That rule can be changed on the Taxes screen, so these are held
+          rather than discarded.
+        clear: Clear
         notes_label: Notes
         save: Save
         cancel: Cancel

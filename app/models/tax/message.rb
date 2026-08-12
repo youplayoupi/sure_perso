@@ -73,6 +73,20 @@ module Tax
       Messages.render(@key, @args)
     end
 
+    # What this sentence asks of the reader, and which fact it asks for.
+    #
+    # Both are looked up from the key rather than carried on the instance, so
+    # the constructor keeps its two arguments and none of the ~60 places that
+    # raise a message has to say anything new. Tax::Messages::SEVERITY explains
+    # why that is the right shape and not merely the cheap one.
+    def severity
+      Messages.severity(key)
+    end
+
+    def asks_for
+      Messages.asks_for(key)
+    end
+
     # Where a translator finds this sentence. Computed here rather than at the
     # view edge so that the engine owns its own naming and the helper stays a
     # lookup.

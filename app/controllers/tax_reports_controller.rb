@@ -26,6 +26,8 @@ class TaxReportsController < ApplicationController
       )
     )
 
+    @rows = rows_by_state
+
     @coverage = Tax::Coverage.new(@registry)
 
     # The card lists what this household holds; the rest of Sure's world
@@ -100,6 +102,44 @@ class TaxReportsController < ApplicationController
       Tax::Projection.new(
         registry: @registry, rates: rates, assumptions: @assumptions
       ).run(@subjects, from: valuation_date)
+    end
+
+    # The table's rows, sorted into the three blocks the reader cares about and
+    # ordered by size inside each.
+    #
+    # `Snapshot#results` is ordered by account, which is the right order for a
+    # thing that has to be stable and reproducible and the wrong one for a
+    # person reading it: an account needing a fact sits between two that are
+    # fine, so finding what to act on means reading every row. Grouping puts
+    # the work first; sorting by gross inside each block puts the money first,
+    # because a 200 € Livret and a 200 000 € PEA in the same state are not
+    # equally worth the reader's next five minutes.
+    #
+    # Computed here rather than in the template because ERB that groups and
+    # sorts is ERB that has to be read to know what the page shows. The state
+    # itself comes from the helper -- see TaxReportsHelper#tax_row_state -- so
+    # that the block a row lands in and the colour it wears are the same
+    # decision made once. Each row carries its own already-sorted warnings, too:
+    # the template needed them anyway, and computing them here means the
+    # demotion pass runs once per row instead of three times.
+    #
+    # Every state is a key even when empty, so the template iterates a constant
+    # order instead of whatever `group_by` happened to see first, and an empty
+    # block is a thing the page can choose to say nothing about rather than a
+    # missing key it has to guard.
+    def rows_by_state
+      rows = @snapshot.results.map do |result|
+        warnings = helpers.tax_warnings(result)
+        [ helpers.tax_row_state(result, warnings), result, warnings ]
+      end
+
+      grouped = rows.group_by(&:first)
+
+      TaxReportsHelper::STATES.index_with do |state|
+        Array(grouped[state])
+          .sort_by { |(_, result, _)| -(result.gross || 0) }
+          .map { |(_, result, warnings)| [ result, warnings ] }
+      end
     end
 
     # Disagreements between Sure's own classification of an account and what

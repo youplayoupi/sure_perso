@@ -24,8 +24,8 @@ module Tax
         label "Lump sum: your rate on both the capital and the growth"
 
         formula terms: [
-          { base: "paid_in_deducted",  rate: "household_rate" },
-          { base: "gain_over_paid_in", rate: "household_rate" }
+          { base: "plus_value_base_deducted", rate: "household_rate" },
+          { base: "plus_value",               rate: "household_rate" }
           # The same two keys the rule raises as warnings when it runs. The note
           # on the rules screen and the warning on the report are one claim, and
           # keying them separately would hand a translator the same sentence
@@ -42,7 +42,7 @@ module Tax
 
           def gains_basis(rate)
             "#{percent(rate)} household rate"
-end
+          end
 
           def household_rate_income(deducted, gains)
             deducted + gains

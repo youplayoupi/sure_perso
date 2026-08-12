@@ -43,8 +43,15 @@ module Tax
       results.all?(&:modelled?)
     end
 
-    def incomplete_count
-      results.count { |r| !r.modelled? }
+    # The accounts there is no figure for, in the order the results came in.
+    #
+    # This replaces a count. "3 accounts could not be computed" tells a reader
+    # that something is wrong and leaves them to work out which, which on a page
+    # of nine rows means reading all nine to find the three -- and the banner
+    # exists precisely so they do not have to. A list of names is longer and
+    # answers the question the sentence raises.
+    def incomplete
+      results.reject(&:modelled?)
     end
 
     def effective_rate
@@ -61,14 +68,6 @@ module Tax
       return BigDecimal(0) if base.nil? || base.zero?
 
       tax / base
-    end
-
-    def warnings
-      results.flat_map { |r| r.warnings.map { |w| [ r.account_name, w ] } }
-    end
-
-    def warning_count
-      results.sum { |r| r.warnings.size }
     end
 
     private

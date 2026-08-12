@@ -113,11 +113,25 @@ module Tax
 
       # --- PEA (gain net, 5-year clock) ----------
       "fr_pea.no_paid_in" =>
-        "PEA tax is levied on the gain net, which is the current value minus the total paid in. Sure does not store the amount paid in.",
+        "PEA tax is levied on the gain net, which is the current value minus the total paid in. Neither that figure nor a cost basis for the holdings is available, so there is nothing to measure a gain against.",
+      "fr_pea.computed_from_cost_basis" =>
+        "The total paid in is not declared, so the gain is measured against what the holdings cost (%{cost_basis}). Selling and rebuying inside the plan raises that figure while the payments in do not, so it is a floor and the tax below is the least this plan could owe. Declare the total paid in to replace it.",
       "fr_pea.loss" =>
         "Value is %{loss} below the amount paid in. A loss is not taxed. A realised loss on closing the plan may be offsettable, which is not modelled.",
       "fr_pea.no_opening_date" =>
         "The opening date is not declared, so the %{maturity}-year clock cannot be checked. Assuming the plan is mature. If it is not, the tax would be %{immature_tax} instead of %{mature_tax}.",
+      # The same assumption as the sentence above, said to a reader who has an
+      # opening date on the account in Sure and would otherwise read "not
+      # declared" as the module failing to look. It looked. Sure's date is the
+      # first day this account is known to have held money, and an account that
+      # already held money on a date is older than that date -- so it bounds the
+      # age from below and cannot settle a clock the bound falls short of.
+      # Naming the date is what makes that legible, and what tells the reader
+      # the bound is wrong rather than the arithmetic.
+      "fr_pea.opening_date_floor_only" =>
+        "Sure has this account holding money on %{since}, so it was opened on or before then -- a floor, not an opening date, and short of the %{maturity} years the clock needs. Assuming the plan is mature. If it is not, the tax would be %{immature_tax} instead of %{mature_tax}. Correct the account's opening balance in Sure, or declare the date here.",
+      "fr_pea.mature_by_lower_bound" =>
+        "The opening date is not declared, but this account already held money on %{since}, which is more than %{maturity} years ago. The clock has run whatever the exact date was.",
       "fr_pea.immature" =>
         "The plan is %{age} years old, under %{maturity}. Any withdrawal closes it and the whole gain takes the full rate.",
       "fr_pea.exceeds_ceiling" =>
@@ -145,7 +159,9 @@ module Tax
 
       # --- Capital and gains (lump sum) ----------
       "fr_capital_and_gains.no_paid_in" =>
-        "This wrapper splits into payments in and growth, taxed under different regimes. Sure does not store the amount paid in.",
+        "This wrapper splits into payments in and growth, taxed under different regimes. Neither the amount paid in nor a cost basis for the holdings is available, so there is nothing to split.",
+      "fr_capital_and_gains.computed_from_cost_basis" =>
+        "The total paid in is not declared, so what the holdings cost (%{cost_basis}) stands in for it -- in the capital as well as in the growth, so that the two together still come to the whole value. It is the larger of the two figures whenever this wrapper has gained, so more of the value is taxed at your marginal rate than should be and the tax below is the most this wrapper could owe. Declare the total paid in to replace it.",
       "fr_capital_and_gains.no_deducted" =>
         "The deducted portion is not declared, so all payments in are assumed to have been deducted. That is the higher-tax assumption. Declare it if some payments were made without taking the deduction.",
       "fr_capital_and_gains.deducted_exceeds_total" =>
@@ -178,6 +194,14 @@ module Tax
         "The declared deducted portion (%{declared}) is more than the total paid in (%{paid_in}). Capped at the total; one of the two figures is wrong.",
       "composed.no_opening_date" =>
         "No opening date is declared, so the %{years}-year clock cannot be checked. Treated as mature, which gives %{mature_tax}; if it is not, the tax would be %{young_tax}.",
+      # See fr_pea.opening_date_floor_only. Kept in step with the built-in rule
+      # on purpose: a household's own rule with a clock should say the same
+      # thing about the same facts as the shipped one, or the rules screen is
+      # quietly offering something else.
+      "composed.opening_date_floor_only" =>
+        "Sure has this account holding money on %{since}, so it was opened on or before then -- a floor, not an opening date, and short of the %{years} years the clock needs. Treated as mature, which gives %{mature_tax}; if it is not, the tax would be %{young_tax}. Correct the account's opening balance in Sure, or declare the date here.",
+      "composed.known_since" =>
+        "No opening date is declared, but this account already held money on %{since}, which is more than %{years} years ago. The clock has run whatever the exact date was.",
       "composed.immature" =>
         "This wrapper is %{age} years old, under the %{years} it needs, so the terms that depend on the clock are taxed at the pre-maturity rate.",
       "composed.not_taxed_on_liquidation" =>
@@ -242,6 +266,192 @@ module Tax
       "assumptions.marginal_rate_caveat" =>
         "No household marginal rate has been set, so %{rate} is assumed for the part taxed as income. That is a guess, not your rate: set it under Taxes and this figure changes."
     }.freeze
+
+    # What a sentence asks of the reader. Three answers and no more, because a
+    # reader can act on three: nothing, type a figure, or accept that this
+    # account has no number.
+    #
+    #   :note    -- true, worth saying, asks nothing.
+    #   :gap     -- something is missing or contradictory, and correcting it
+    #               would change the figure. The figure still stands.
+    #   :blocker -- nothing was computed, and nothing this page can say will
+    #               change that.
+    #
+    # It is a property of the sentence rather than of the occasion, which is
+    # why it is a table beside the English instead of an argument at the ~60
+    # places a message is raised. A given key always means the same kind of
+    # thing to a reader; if it did not, it would be two keys.
+    #
+    # Every key in TEXTS appears here, including the ones that are obviously
+    # notes -- the basis lines, the rules-screen prose. `fetch` with a default
+    # would have been shorter and would have meant "nobody has decided" and
+    # "somebody decided :note" are written identically. The completeness test
+    # in test/models/tax/messages_test.rb is what makes that worth the length:
+    # a key added without a line here fails the build, at the moment its author
+    # is still holding the reason.
+    #
+    # On contradictions -- a declared deducted portion larger than the total
+    # paid in, payments above a PEA's legal ceiling. Nothing is *missing*
+    # there, so by the letter of ":gap" they would be notes. They are gaps,
+    # because severity sorts by what the reader does about it and the answer is
+    # the same in both cases: open the form and put a figure right. A
+    # demonstrably wrong figure has a better claim on the reader's attention
+    # than an absent one, and burying it behind a disclosure would be the worse
+    # error of the two.
+    SEVERITY = {
+      # Refusal scaffolding. `base.declare` only ever accompanies a reason that
+      # is itself a blocker; `base.cannot_be_computed` is a basis line and
+      # never a warning at all.
+      "base.declare" => :blocker,
+      "base.cannot_be_computed" => :note,
+      "base.cost_basis_footnote" => :note,
+
+      # The rules screen describes a rule, never an account, so none of it asks
+      # the reader for anything.
+      "formula.nothing_taxed" => :note,
+      "formula.headline" => :note,
+      "formula.needs" => :note,
+      "formula.rate_with_percent" => :note,
+      "formula.head_with_percent" => :note,
+      "formula.head_named_rate" => :note,
+      "formula.head_unresolved_rate" => :note,
+      "formula.condition_mature" => :note,
+      "formula.condition_immature" => :note,
+      "formula.condition_immature_unknown_clock" => :note,
+      "formula.clock_years" => :note,
+      "formula.clock_unknown" => :note,
+      "formula.window_between" => :note,
+      "formula.window_from" => :note,
+      "formula.window_until" => :note,
+      "formula.window_unreadable" => :note,
+
+      "fr_securities.no_cost_basis" => :blocker,
+      "fr_securities.latent_loss" => :note,
+      "fr_securities.declared_cost" => :note,
+      "fr_securities.flat_tax_assumed" => :note,
+      "fr_securities.basis" => :note,
+
+      "fr_pea.no_paid_in" => :blocker,
+      # The figure stands and would move if the versements were declared,
+      # which is the definition of a gap. Both of these are the point of this
+      # part: the row that used to be blank now carries a number and the
+      # sentence that says what is wrong with it.
+      "fr_pea.computed_from_cost_basis" => :gap,
+      "fr_pea.loss" => :note,
+      "fr_pea.no_opening_date" => :gap,
+      "fr_pea.opening_date_floor_only" => :gap,
+      # A lower bound that already clears the clock is not a gap: declaring the
+      # exact date would move nothing. Worth saying once, quietly.
+      "fr_pea.mature_by_lower_bound" => :note,
+      "fr_pea.immature" => :note,
+      "fr_pea.exceeds_ceiling" => :gap,
+      "fr_pea.taux_historiques" => :note,
+      "fr_pea.basis_mature" => :note,
+      "fr_pea.basis_immature" => :note,
+
+      "fr_deposit.taxable_savings" => :note,
+      "fr_deposit.checking" => :note,
+      "fr_deposit.unknown_product" => :gap,
+      # "quite legally" -- the sentence normalises itself and there is nothing
+      # to correct. Unlike the PEA ceiling, which is a legal maximum, and whose
+      # breach means a declared figure is wrong.
+      "fr_deposit.exceeds_ceiling" => :note,
+      "fr_deposit.basis_cash" => :note,
+      "fr_deposit.note_interest_taxed_as_it_arises" => :note,
+
+      "fr_capital_and_gains.no_paid_in" => :blocker,
+      "fr_capital_and_gains.computed_from_cost_basis" => :gap,
+      "fr_capital_and_gains.no_deducted" => :gap,
+      "fr_capital_and_gains.deducted_exceeds_total" => :gap,
+      "fr_capital_and_gains.lump_sum_caveat" => :note,
+      "fr_capital_and_gains.non_deducted_untaxed" => :note,
+      "fr_capital_and_gains.whole_wrapper_lump_sum" => :note,
+      "fr_capital_and_gains.mixed_election_not_modelled" => :note,
+      "fr_capital_and_gains.basis" => :note,
+
+      "composed.invalid_formula" => :blocker,
+      "composed.missing_facts" => :blocker,
+      "composed.no_deducted_portion" => :gap,
+      "composed.deducted_exceeds_total" => :gap,
+      "composed.no_opening_date" => :gap,
+      "composed.opening_date_floor_only" => :gap,
+      "composed.known_since" => :note,
+      "composed.immature" => :note,
+      "composed.not_taxed_on_liquidation" => :note,
+      "composed.term" => :note,
+      "composed.term_household_rate" => :note,
+      "composed.basis" => :note,
+
+      # The sentences an unmodelled account gets are one explanation in three
+      # parts, and they are all blockers so that they stay together. A note
+      # among them would sit behind a disclosure while its own first clause sat
+      # above it.
+      "unknown.no_rule" => :blocker,
+      "unknown.treatment_is_classification" => :blocker,
+      # Never emitted on its own -- it is interpolated into the sentence above,
+      # so this severity is never consulted. Listed because the test demands
+      # every key be listed, and because the day it is raised directly the
+      # answer should already be here.
+      "unknown.suggestion" => :note,
+      "unknown.needs_custom_rule" => :blocker,
+
+      "exempt.basis" => :note,
+      "exempt.exceeds_ceiling" => :note,
+
+      # Sure's classification and the rule that ran disagree. No per-account
+      # form settles that -- see ASKS_FOR -- so these keep saying so, which is
+      # the point: an unresolved disagreement about whether an account is taxed
+      # at all should not go quiet because somebody opened a form once.
+      "treatment.tax_exempt_but_taxed" => :gap,
+      "treatment.deferred_or_advantaged_but_cto" => :gap,
+
+      "registry.no_value" => :blocker,
+
+      "not_modelled.excluded_from_total" => :blocker,
+      "not_modelled.assurance_vie" => :blocker,
+      "not_modelled.crypto" => :blocker,
+      "not_modelled.property" => :blocker,
+
+      "assumptions.marginal_rate_caveat" => :gap
+    }.freeze
+
+    # Which fact a gap is about, where a form on the account itself can take
+    # it.
+    #
+    # This exists for one purpose. A household that has opened the form and
+    # chosen not to fill a field in has answered the question, and the report
+    # should say so once and then be quiet -- see TaxReportsHelper, where the
+    # demotion happens. It happens at the view edge rather than here because
+    # the engine's job is to keep saying the true thing and the page's job is
+    # to decide how loudly.
+    #
+    # A gap with no entry is one no account form can close: a marginal rate
+    # belongs to the household rather than to an account, and a disagreement
+    # with Sure's own classification is settled on the Taxes screen or not at
+    # all. Those never quieten, which is why absence is the default rather than
+    # something a key has to declare.
+    ASKS_FOR = {
+      "fr_pea.computed_from_cost_basis" => :paid_in,
+      "fr_capital_and_gains.computed_from_cost_basis" => :paid_in,
+      "fr_pea.no_opening_date" => :opened_on,
+      "fr_pea.opening_date_floor_only" => :opened_on,
+      "fr_pea.exceeds_ceiling" => :paid_in,
+      "fr_deposit.unknown_product" => :product,
+      "fr_capital_and_gains.no_deducted" => :paid_in_deducted,
+      "fr_capital_and_gains.deducted_exceeds_total" => :paid_in_deducted,
+      "composed.no_deducted_portion" => :paid_in_deducted,
+      "composed.deducted_exceeds_total" => :paid_in_deducted,
+      "composed.no_opening_date" => :opened_on,
+      "composed.opening_date_floor_only" => :opened_on
+    }.freeze
+
+    def self.severity(key)
+      SEVERITY.fetch(key.to_s, :note)
+    end
+
+    def self.asks_for(key)
+      ASKS_FOR[key.to_s]
+    end
 
     class UnknownMessage < ::StandardError; end
 

@@ -102,13 +102,23 @@ module Tax
             product: subject.product,
             currency: subject.currency,
             gross: subject.value,
+            # Passed through, never read here. Tax::Result#reviewed says what
+            # it is for and why no rule may act on it.
+            reviewed: subject.declared?(:reviewed),
             **attrs
           )
         end
 
         # The standard refusal. Used whenever a rule knows which arithmetic it
         # would do but is missing an input it is not willing to guess.
-        def refuse(subject, reason:, needs:, extra_warnings: [])
+        #
+        # `needs` is that input as a sentence and `missing` is the same input
+        # as symbols. Both are passed rather than one derived from the other,
+        # because the sentence is deliberately not the symbol: Fr::Securities
+        # asks for an "acquisition cost", which is `:cost_basis` said the way a
+        # person says it. Deriving either from the other would hand one of the
+        # two audiences the other one's vocabulary.
+        def refuse(subject, reason:, needs:, missing: [], extra_warnings: [])
           warnings = [ reason ]
           warnings << msg("base.declare", needs: needs)
           warnings.concat(Array(extra_warnings))
@@ -119,6 +129,7 @@ module Tax
             tax: nil,
             basis: msg("base.cannot_be_computed"),
             warnings: warnings,
+            missing_facts: missing,
             modelled: false
           )
         end

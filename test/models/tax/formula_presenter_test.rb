@@ -218,8 +218,8 @@ class FormulaPresenterTest < Minitest::Test
       Tax::Rules::Fr::CapitalAndGainsAtHouseholdRate.formula, rates: rates, on: ON
     )
 
-    assert_equal "Tax is your marginal rate on the deducted payments in " \
-                 "and your marginal rate on the gain over what was paid in.",
+    assert_equal "Tax is your marginal rate on the deducted part of what went in " \
+                 "and your marginal rate on the gain over what went in.",
                  english(presenter.headline)
   end
 
@@ -298,9 +298,14 @@ class FormulaPresenterTest < Minitest::Test
       Tax::Rules::Fr::Pea.formula, rates: rates, on: ON, product: "pea"
     )
 
-    assert_equal "Tax is 18.6% social charges on the gain over what was paid in, " \
+    # "what went in" rather than "what was paid in", and the vagueness is
+    # deliberate: since Part 4 this base is the versements where they are
+    # declared and what the holdings cost where they are not, and a sentence
+    # that named the versements outright would be describing only half the
+    # accounts it is printed above.
+    assert_equal "Tax is 18.6% social charges on the gain over what went in, " \
                  "once the account is 5 years old and 31.4% flat tax on the gain " \
-                 "over what was paid in, while the account is under 5 years old.",
+                 "over what went in, while the account is under 5 years old.",
                  english(presenter.headline)
   end
 end

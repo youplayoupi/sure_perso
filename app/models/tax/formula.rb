@@ -36,6 +36,14 @@ module Tax
     # missing does not guess and does not fall back to a near-miss; the rule
     # refuses the whole account, which is the same thing the hand-written rules
     # do and for the same reason.
+    #
+    # `optional:` is the other half of that sentence, and it exists for the
+    # form rather than for the arithmetic. A fact listed there has a defensible
+    # reading when absent -- so the rule computes without it -- but supplying it
+    # changes the answer. The distinction is what lets the profile form ask a
+    # PER for its deducted portion and ask a Livret A for nothing at all,
+    # instead of asking every account for everything and leaving the reader to
+    # work out which boxes were meant for them.
     BASES = {
       # The entire balance. Rare, and deliberately so -- most wrappers tax a
       # gain -- but it is what a withdrawal from a fully deducted pension pot
@@ -59,12 +67,41 @@ module Tax
       # the way in, and therefore becomes taxable on the way out. Undeclared
       # means "assume all of it", which is the higher-tax reading; see
       # Rules::Composed#deducted.
-      "paid_in_deducted" => { needs: [ :paid_in ] },
+      "paid_in_deducted" => { needs: [ :paid_in ], optional: [ :paid_in_deducted ] },
 
       # Payments that were made without taking the deduction, which come back
       # untaxed. Present so that a formula can state that explicitly rather
       # than by omission.
-      "paid_in_not_deducted" => { needs: [ :paid_in ] }
+      "paid_in_not_deducted" => { needs: [ :paid_in ], optional: [ :paid_in_deducted ] },
+
+      # The gain, measured against the payments in where they were declared
+      # and against what the holdings cost where they were not. See
+      # Tax::Subject#plus_value_base for which is which and why the second is
+      # a floor rather than an answer.
+      #
+      # `needs: []` looks like a claim that this base can always be computed,
+      # and it is not one: it needs *one of* two facts, which is a shape this
+      # table cannot express and Rules::Composed#missing_facts checks for
+      # separately. What the empty list buys is the thing the whole of this
+      # part is for -- a wrapper with neither fact declared still refuses,
+      # while a wrapper with only the cost basis gets a number instead of a
+      # blank row.
+      #
+      # `paid_in` is optional in the strict sense the comment above gives it:
+      # the rule reaches an answer without it, and supplying it changes that
+      # answer. That is exactly the entry that puts a "refine this" link on a
+      # row whose figure already stands.
+      "plus_value" => { needs: [], optional: [ :paid_in ] },
+
+      # The part of that same base that was deducted from taxable income on
+      # the way in. Stands to `plus_value` as `paid_in_deducted` stands to
+      # `gain_over_paid_in`, and pairs with it: a wrapper taxed on both is
+      # taxed on its whole value between the two terms, which is what makes
+      # the cost basis an acceptable stand-in here at all. Substituting it
+      # into the gain term alone would move money out of the household's rate
+      # and into the flat tax, which is a discount this module has no business
+      # granting.
+      "plus_value_base_deducted" => { needs: [], optional: [ :paid_in, :paid_in_deducted ] }
     }.freeze
 
     # The two rates that do not come from a country's rate file.
@@ -223,6 +260,12 @@ module Tax
         vintage? ? (facts + [ :opened_on ]).uniq : facts
       end
 
+      # Facts this term can do without and would rather have. Never overlaps
+      # `needs`: a fact is either refused for or assumed about, not both.
+      def optional_needs
+        BASES.fetch(base, {}).fetch(:optional, [])
+      end
+
       # Collected rather than raised on, so that a form can show every problem
       # at once and a row written by a future version of this module degrades
       # to a refusal instead of an exception.
@@ -377,6 +420,22 @@ module Tax
     # Every account fact this formula cannot do without, across all its terms.
     def needs
       terms.flat_map(&:needs).uniq
+    end
+
+    # Facts that change the answer without being required to reach one.
+    #
+    # `opened_on` is here rather than in `needs` whenever a term is on the
+    # maturity clock, and the asymmetry with a vintage window is deliberate.
+    # A window has no defensible default -- inside and outside are two
+    # different taxes and a null date favours neither -- so a term with one
+    # refuses. A clock does: Rules::Fr::Pea assumes a plan with no opening date
+    # is mature, says so in a warning, and prints both figures. The opening
+    # date is then worth asking for and not worth blocking on, which is exactly
+    # what this list means.
+    def optional_needs
+      facts = terms.flat_map(&:optional_needs)
+      facts << :opened_on if uses_clock?
+      (facts - needs).uniq
     end
 
     def errors(known_rates: nil)

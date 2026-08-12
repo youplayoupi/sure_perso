@@ -211,6 +211,66 @@ module Tax
 
       assert_equal %i[cost_basis paid_in], formula.needs.sort
     end
+
+    # `needs` and `optional_needs` are two different questions about the same
+    # formula, and the profile form asks both: the first decides whether a
+    # figure is missing, the second decides whether a field is worth showing.
+    # These tests pin the line between them, because moving a fact across it
+    # silently changes what the form asks a whole class of accounts for.
+    def test_optional_needs_reports_facts_that_refine_rather_than_block
+      formula = Tax::Formula.new(
+        terms: [ { base: "paid_in_deducted", rate: "progressive" } ]
+      )
+
+      # `paid_in` is required -- there is no defensible reading of a pension
+      # pot whose payments in are unknown. The deducted portion is not: a blank
+      # means "assume all of it", which is the higher-tax assumption and so the
+      # safe one to make out loud.
+      assert_equal [ :paid_in ], formula.needs
+      assert_equal [ :paid_in_deducted ], formula.optional_needs
+    end
+
+    def test_a_maturity_clock_makes_the_opening_date_optional_not_required
+      formula = Tax::Formula.new(
+        terms: [ { base: "gain_over_paid_in", rate: "flat_tax", condition: "immature" } ],
+        maturity_years: 5
+      )
+
+      # A clock has a defensible default -- Rules::Fr::Pea assumes a plan with
+      # no opening date is mature and says so -- so the date belongs on the
+      # form without blocking the answer. Were it in `needs` instead, every PEA
+      # with no declared date would read as uncomputable.
+      refute_includes formula.needs, :opened_on
+      assert_includes formula.optional_needs, :opened_on
+    end
+
+    def test_a_vintage_window_makes_the_opening_date_required_not_optional
+      formula = Tax::Formula.new(
+        terms: [
+          { base: "gain_over_paid_in", rate: "flat_tax",
+            opened_from: "2018-01-01" }
+        ]
+      )
+
+      # The asymmetry with the clock above is the point. Inside and outside a
+      # window are two different taxes and a null date favours neither, so the
+      # rule refuses rather than picking one.
+      assert_includes formula.needs, :opened_on
+      refute_includes formula.optional_needs, :opened_on
+    end
+
+    def test_no_fact_is_both_required_and_optional
+      # Belt and braces on the invariant the two lists rest on: a form that saw
+      # the same fact in both would render the same field twice, once as asked
+      # for and once as demoted.
+      Tax::Catalogue.entries.each do |id, (klass, _)|
+        formula = klass.formula
+        next if formula.nil?
+
+        assert_empty formula.needs & formula.optional_needs,
+                     "#{id} lists a fact as both required and optional"
+      end
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -225,6 +285,16 @@ module Tax
     # Balances, payments and dates chosen to cross every branch that matters:
     # a gain and a loss, a mature plan and a young one, an undeclared opening
     # date, a fully deducted pot and a partly deducted one.
+    #
+    # The last three rows are Part 4's, and they are the ones with teeth. Every
+    # row above them declares `paid_in`, which meant that for as long as the
+    # rules refused without it, this matrix could not tell a rule that falls
+    # back to the cost basis apart from a formula that does not. The divergence
+    # would have been invisible here and worth real money on the page. A row
+    # with no versements forces the rule and its own formula to agree about the
+    # stand-in as well as about the arithmetic -- including, in the last row,
+    # that a declared deducted portion is measured against the stand-in rather
+    # than against a figure nobody has.
     def matrix
       [
         { value: 150_000, paid_in: 100_000, cost_basis: 90_000, opened_on: Date.new(2010, 1, 1) },
@@ -232,11 +302,20 @@ module Tax
         { value:  80_000, paid_in: 100_000, cost_basis: 110_000, opened_on: Date.new(2010, 1, 1) },
         { value: 150_000, paid_in: 100_000, cost_basis: 90_000, opened_on: nil },
         { value: 120_000, paid_in: 100_000, cost_basis: 100_000, opened_on: Date.new(2019, 3, 3),
-          paid_in_deducted: 60_000 }
+          paid_in_deducted: 60_000 },
+        { value: 150_000, paid_in: nil, cost_basis: 90_000, opened_on: Date.new(2010, 1, 1) },
+        { value: 150_000, paid_in: nil, cost_basis: 90_000, opened_on: Date.new(2024, 6, 1) },
+        { value: 150_000, paid_in: nil, cost_basis: 90_000, opened_on: Date.new(2010, 1, 1),
+          paid_in_deducted: 40_000 }
       ]
     end
 
-    def assert_equivalent(rule, extra: {}, skip_keys: [], assumptions: nil)
+    # No `skip_keys:` any more. It existed for exactly one caller, to excuse
+    # exactly one formula from describing what its rule did, and an escape
+    # hatch on the test that guards the explanations is a hole in the thing
+    # being guarded. Removed with its last user so that the next rule tempted
+    # to diverge has to change the formula instead.
+    def assert_equivalent(rule, extra: {}, assumptions: nil)
       formula = rule.class.formula
       refute_nil formula, "#{rule.class} declares no formula"
       assert formula.valid?, "#{rule.class}: #{formula.errors.inspect}"
@@ -245,7 +324,6 @@ module Tax
 
       matrix.each_with_index do |row, index|
         attrs = row.merge(extra)
-        skip_keys.each { |k| attrs.delete(k) }
         attrs = attrs.transform_values { |v| v.is_a?(Integer) ? d(v) : v }
 
         subj = subject(**attrs)
@@ -263,13 +341,16 @@ module Tax
     end
 
     def test_securities_matches_its_formula
-      # No declared figure: #acquisition_cost prefers one when it exists, which
-      # is a rule about sourcing rather than about what is taxed and so is
-      # deliberately not a term. See the comment on the declaration.
+      # `skip_keys: [ :paid_in ]` used to be here, because the rule preferred a
+      # declared figure and its formula named the cost basis outright, so the
+      # two disagreed on any account that had both. Part 4 gave the formula the
+      # same cascade the rule was already using, and the exemption went with it
+      # -- which is the small proof that this was a mismatch between the
+      # explanation and the arithmetic rather than a fact about sourcing that
+      # formulas cannot express.
       assert_equivalent(
         Tax::Rules::Fr::Securities.new,
-        extra: { accountable_type: "Investment", subtype: "brokerage", product: "cto" },
-        skip_keys: [ :paid_in ]
+        extra: { accountable_type: "Investment", subtype: "brokerage", product: "cto" }
       )
     end
 

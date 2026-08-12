@@ -22,6 +22,21 @@ module Tax
 
     belongs_to :account
 
+    # The facts a person can actually type, in the order the form asks for
+    # them, and the reason the form does not simply render every column.
+    #
+    # A rule states what it wants through `Tax::Formula#needs` and
+    # `#optional_needs`, in the engine's vocabulary -- which includes facts no
+    # form collects, `:cost_basis` above all, because that one is derived from
+    # Sure's own holdings. Intersecting against this list is how a caller turns
+    # "what the arithmetic wants" into "what there is a box for", and it is why
+    # a missing cost basis produces an explanation on the report rather than a
+    # link to a form with nothing on it.
+    #
+    # `notes` is absent deliberately: it is free text about the account rather
+    # than an input to any rule, so it is always offered and never asked for.
+    DECLARABLE = %i[product paid_in paid_in_deducted opened_on].freeze
+
     validates :account_id, uniqueness: true
     validates :paid_in, :paid_in_deducted,
               numericality: { greater_than_or_equal_to: 0 }, allow_nil: true

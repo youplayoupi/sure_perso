@@ -3,7 +3,9 @@
     <h1 class="text-xl lg:text-2xl font-medium text-primary">
       <%= t(".title", account: @account.name) %>
     </h1>
-    <p class="text-sm text-secondary max-w-2xl"><%= t(".intro") %></p>
+    <p class="text-sm text-secondary max-w-2xl">
+      <%= @relevant_facts.any? ? t(".intro") : t(".intro_nothing_needed") %>
+    </p>
   </header>
 <% end %>
 
@@ -24,39 +26,68 @@
     <% end %>
 
     <%#
-      Ordered by how often they matter, not by how the table is laid out.
-      `paid_in` is first because it is the one figure that decides whether an
-      account can be computed at all.
+      Only the facts the rule attached to this account actually uses, in the
+      order Tax::Profile::DECLARABLE lists them.
+
+      This page used to ask for all four on every account, which meant a Livret
+      A was asked for a total paid in, an opening date and a deducted portion
+      that no rule would ever read, and gave a reader no way to tell the
+      question that mattered from the three that did not. The controller now
+      works the list out from the rule's own formula, so a custom rule
+      assembled on the Taxes screen changes what is asked for here without this
+      file changing at all.
+
+      Nothing else is offered. There used to be a disclosure below holding the
+      other three as inputs, which meant every account carried three empty
+      boxes collecting figures no rule would read. The one case that justified
+      it -- a figure typed under a rule that has since been changed -- is kept
+      below as a value with a way to remove it, which is what it needed.
     %>
-    <div class="space-y-1">
-      <%# The currency is in the label rather than assumed. These figures are
-          copied off a statement in the account's own currency, and the report
-          converts them; leaving the label bare invites entering euros into a
-          dollar account and getting a confidently wrong answer back. %>
-      <%= f.number_field :paid_in, step: "0.01",
-                         label: t(".paid_in_label", currency: @account.currency) %>
-      <p class="text-xs text-secondary"><%= t(".paid_in_hint") %></p>
-    </div>
+    <% if @relevant_facts.any? %>
+      <div class="space-y-5">
+        <% @relevant_facts.each do |fact| %>
+          <%= render "tax/profiles/fact", fact: fact, f: f,
+                     account: @account, rule_id: @rule_id,
+                     sure_opening_date: @sure_opening_date,
+                     sure_known_since: @sure_known_since %>
+        <% end %>
+      </div>
+    <% end %>
 
-    <div class="space-y-1">
-      <%= f.date_field :opened_on, label: t(".opened_on_label") %>
-      <p class="text-xs text-secondary"><%= t(".opened_on_hint") %></p>
-    </div>
-
-    <div class="space-y-1">
-      <%= f.select :product,
-                   [ [ t(".product_from_sure"), "" ] ] + product_choices,
-                   { label: t(".product_label") } %>
-      <p class="text-xs text-secondary"><%= t(".product_hint") %></p>
-    </div>
-
-    <div class="space-y-1">
-      <%= f.number_field :paid_in_deducted, step: "0.01",
-                         label: t(".deducted_label", currency: @account.currency) %>
-      <p class="text-xs text-secondary"><%= t(".deducted_hint") %></p>
-    </div>
-
+    <%# Always offered, never asked for. A note is about the account rather
+        than an input to any rule, so there is no version of this page on which
+        "the rule does not need your notes" would be a useful thing to say. %>
     <%= f.text_area :notes, rows: 2, label: t(".notes_label") %>
+
+    <% if @stale_facts.any? %>
+      <%# Figures with no rule left to read them.
+          Shown rather than dropped, because the rule attached to an account
+          can be changed on the Taxes screen and a number typed under the old
+          one would otherwise sit in the database affecting nothing, invisible.
+          Shown as values rather than as inputs, because inviting someone to
+          edit a figure nothing reads is the same mistake in a smaller box. %>
+      <div class="border-t border-secondary/50 pt-4 space-y-3">
+        <p class="text-sm text-secondary max-w-2xl"><%= t(".stale_facts_hint") %></p>
+        <% @stale_facts.each do |fact| %>
+          <div class="flex items-baseline justify-between gap-4 text-sm">
+            <span class="text-secondary">
+              <%= tax_fact_label(fact, @rule_id, currency: @account.currency) %>
+            </span>
+            <span class="flex items-baseline gap-3">
+              <span class="text-primary font-medium">
+                <% value = @profile.public_send(fact) %>
+                <%= fact == :opened_on ? l(value, format: :long) : value %>
+              </span>
+              <label class="flex items-center gap-1.5 text-xs text-secondary cursor-pointer">
+                <%= check_box_tag "clear_facts[]", fact, false, id: "clear_#{fact}",
+                                  class: "rounded border-secondary" %>
+                <%= t(".clear") %>
+              </label>
+            </span>
+          </div>
+        <% end %>
+      </div>
+    <% end %>
 
     <div class="flex items-center gap-3">
       <%= f.submit t(".save") %>

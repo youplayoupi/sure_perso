@@ -28,8 +28,12 @@ fr:
       net_upper_bound: Net (majorant)
       effective_rate: Taux effectif
       modelled_rate: Taux sur ce qui a été calculé
-      incomplete_title: >-
-        %{count} comptes n'ont pas pu être calculés
+      of_gross_html: sur %{amount} brut
+      keep_share: Il vous reste %{percent}
+      tax_share: Impôt %{percent}
+      unmodelled_gross: Aucun montant pour
+      total: Total
+      incomplete_title: "Aucun montant pour %{accounts}"
       incomplete_body: >-
         Leur valeur est comptée dans le brut mais aucun impôt n'en est déduit :
         le net ci-dessus est donc un majorant, pas une réponse.
@@ -37,10 +41,21 @@ fr:
       col_account: Compte
       col_rule: Règle
       col_base: Assiette
+      col_rate: Taux eff.
+      source:
+        paid_in: d'après les versements déclarés
+        cost_basis: d'après le prix de revient des titres
       status:
         computed: Calculé
-        check: À vérifier
+        incomplete: À compléter
         not_computed: Non calculé
+      block:
+        incomplete: Il manque quelque chose
+        computed: Calculés
+        not_computed: Sans montant
+      notes_count:
+        one: 1 remarque
+        other: "%{count} remarques"
       audit: Là où ceci diverge du classement que Sure fait du compte
       coverage: Ce que ce module couvre
       coverage_body: >-
@@ -89,7 +104,17 @@ fr:
         est l'impôt. Au bout de l'horizon elles valent %{gross} et %{net}.
       projection_end: "%{date} : %{gross} brut, %{net} net"
       projection_end_upper_bound: "%{date} : %{gross} brut, %{net} net au plus"
+      # Trois libellés pour un seul lien, et celui qui s'affiche dit ce que la
+      # ligne attend de vous : `declare` quand rien n'a pu être calculé faute
+      # d'une information que le formulaire sait recueillir, `refine` quand le
+      # chiffre tient mais repose sur une valeur de substitution qu'une telle
+      # information remplacerait, `adjust` quand le chiffre tient et que rien
+      # ne cloche en particulier. Voir TaxReportsHelper#tax_profile_action pour
+      # le quatrième cas, où aucun libellé n'apparaît parce qu'aucun
+      # formulaire n'y changerait quoi que ce soit.
       declare: Déclarer
+      refine: Préciser
+      adjust: Ajuster
       no_accounts: Aucun compte dans le périmètre.
   tax:
     # Les noms de règles et leurs descriptions vivent en Ruby, dans le moteur,
@@ -110,6 +135,8 @@ fr:
       paid_in: les versements
       paid_in_deducted: les versements déduits
       paid_in_not_deducted: les versements non déduits
+      plus_value: la plus-value au-delà de ce qui est entré
+      plus_value_base_deducted: la part déduite de ce qui est entré
     rates:
       social_charges: prélèvements sociaux
       flat_tax: flat tax
@@ -143,6 +170,24 @@ fr:
           Enveloppe de type PEA : les gains ne sont imposés qu'au retrait, et
           les prélèvements sociaux ne s'appliquent qu'une fois le plan passé
           le cap des cinq ans.
+        # Ce que la règle demande au lecteur, quand elle en attend autre chose
+        # que le libellé générique. Une clé non écrite retombe sur
+        # `profiles.fields`, ce qui est déjà la bonne phrase partout où la
+        # règle n'a rien de particulier à ajouter.
+        facts:
+          paid_in:
+            hint: >-
+              Tout ce que vous avez versé sur le plan depuis l'extérieur. Le
+              gain se mesure par rapport à ce chiffre, et non par rapport au
+              prix de revient des titres détenus : arbitrer à l'intérieur d'un
+              PEA fait bouger le prix de revient sans qu'un euro soit versé.
+          opened_on:
+            hint: >-
+              La date du premier versement, qui est ce qui déclenche le
+              compteur — et non la date de signature du plan. Cinq ans après,
+              le plan ne doit plus que les prélèvements sociaux au lieu de la
+              flat tax entière, soit sur un gain important l'écart entre 17,2 %
+              et 30 %.
       fr_securities:
         label: Compte-titres (flat tax sur la plus-value)
         description: >-
@@ -160,6 +205,18 @@ fr:
           versements déduits sont imposés comme un revenu, les gains au
           prélèvement forfaitaire unique. À utiliser pour un PER tant que Sure
           n'a pas de sous-type dédié.
+        facts:
+          paid_in:
+            hint: >-
+              Tout ce que vous avez versé sur le contrat. Une sortie en capital
+              impose les versements et les gains selon deux règles différentes :
+              c'est ce chiffre qui sépare les deux.
+          paid_in_deducted:
+            hint: >-
+              La part de ces versements que vous avez déduite de votre revenu
+              imposable l'année où vous les avez faits. Cette part est imposée
+              comme un revenu à la sortie ; le reste n'est pas réimposé. Vide
+              suppose la totalité, ce qui est l'hypothèse la plus imposée.
       fr_capital_and_gains_household:
         label: "Sortie en capital : barème sur les versements et sur les gains"
         description: >-
@@ -167,6 +224,18 @@ fr:
           plutôt que le prélèvement forfaitaire unique : les gains sont eux
           aussi imposés à votre taux marginal. À envisager lorsque votre taux
           est inférieur à la flat tax.
+        facts:
+          paid_in:
+            hint: >-
+              Tout ce que vous avez versé sur le contrat. Une sortie en capital
+              impose les versements et les gains selon deux règles différentes :
+              c'est ce chiffre qui sépare les deux.
+          paid_in_deducted:
+            hint: >-
+              La part de ces versements que vous avez déduite de votre revenu
+              imposable l'année où vous les avez faits. Cette part est imposée
+              comme un revenu à la sortie ; le reste n'est pas réimposé. Vide
+              suppose la totalité, ce qui est l'hypothèse la plus imposée.
       exempt:
         label: Exonéré
         description: >-
@@ -179,33 +248,59 @@ fr:
           plus-value, les versements — et le taux, avec une horloge de maturité
           facultative.
     profiles:
+      # Rangé par information plutôt que par écran : le formulaire affiche le
+      # même champ à deux endroits — demandé, ou relégué dans le repli — et un
+      # libellé écrit deux fois est un libellé qui finit par diverger.
+      fields:
+        product:
+          label: Produit
+          from_sure: Utiliser le classement de Sure
+          hint: >-
+            Utile seulement quand le sous-type de Sure n'est pas assez précis.
+            Un Livret A, un LDDS et un livret fiscalisé ordinaire sont tous les
+            trois de l'« épargne » pour Sure.
+        paid_in:
+          label: Total des versements (%{currency})
+          hint: >-
+            Tout ce que vous avez jamais versé sur cette enveloppe. Ce n'est pas
+            le prix de revient de ce que vous détenez aujourd'hui — un dividende
+            réinvesti augmente le prix de revient, pas les versements.
+        paid_in_deducted:
+          label: Dont déduit du revenu imposable (%{currency})
+          hint: >-
+            Pour les enveloppes retraite : la part de vos versements que vous
+            avez déduite du revenu imposable. Vide suppose la totalité, ce qui
+            est l'hypothèse la plus imposée.
+        opened_on:
+          label: Date du premier versement
+          hint: >-
+            La date du premier versement, qui est ce qui déclenche le compteur
+            de cinq ans, et non la date de signature du contrat.
+          from_sure: >-
+            Sure retient le %{date} comme date d'ouverture de ce compte, et
+            c'est cette date qui est utilisée. Ne remplissez ce champ que pour
+            la corriger.
+          known_since: >-
+            Sure voit des sommes sur ce compte au %{date} : il a donc été ouvert
+            à cette date ou avant. C'est une borne, pas une date d'ouverture, et
+            elle ne suffit pas lorsqu'un compteur est proche de son terme.
       edit:
         title: Éléments fiscaux de %{account}
         intro: >-
-          Trois choses dont ce module a besoin et que Sure n'a nulle part où
-          stocker. Laissez vide ce que vous ne savez pas : vide veut dire
-          inconnu, et inconnu est rapporté comme inconnu. Ce n'est jamais
-          traité comme zéro.
-        paid_in_label: Total des versements (%{currency})
-        paid_in_hint: >-
-          Tout ce que vous avez jamais versé sur cette enveloppe. Ce n'est pas
-          le prix de revient de ce que vous détenez aujourd'hui — un dividende
-          réinvesti augmente le prix de revient, pas les versements.
-        opened_on_label: Date du premier versement
-        opened_on_hint: >-
-          La date du premier versement, qui est ce qui déclenche le compteur de
-          cinq ans, et non la date de signature du contrat.
-        product_label: Produit
-        product_from_sure: Utiliser le classement de Sure
-        product_hint: >-
-          Utile seulement quand le sous-type de Sure n'est pas assez précis. Un
-          Livret A, un LDDS et un livret fiscalisé ordinaire sont tous les trois
-          de l'« épargne » pour Sure.
-        deducted_label: Dont déduit du revenu imposable (%{currency})
-        deducted_hint: >-
-          Pour les enveloppes retraite : la part de vos versements que vous avez
-          déduite du revenu imposable. Vide suppose la totalité, ce qui est
-          l'hypothèse la plus imposée.
+          Ce dont ce module a besoin pour ce compte et que Sure n'a nulle part
+          où stocker. Laissez vide ce que vous ne savez pas : vide veut dire
+          inconnu, et inconnu est rapporté comme inconnu. Ce n'est jamais traité
+          comme zéro.
+        intro_nothing_needed: >-
+          Rien ne vous est demandé ici : aucune règle n'est attachée à ce
+          compte, et aucun chiffre saisi ne produirait de résultat. Vous pouvez
+          écrire une règle pour ce produit depuis l'écran Impôts ; ce que vous
+          avez déjà déclaré est conservé entre-temps.
+        stale_facts_hint: >-
+          Conservées, mais non utilisées par la règle actuellement attachée à ce
+          compte. Cette règle peut être changée depuis l'écran Impôts : ces
+          valeurs sont donc gardées plutôt que supprimées.
+        clear: Effacer
         notes_label: Notes
         save: Enregistrer
         cancel: Annuler
@@ -276,8 +371,16 @@ fr:
       fr_pea:
         no_paid_in: >-
           L'impôt sur un PEA porte sur le gain net, c'est-à-dire la valeur
-          actuelle moins le total des versements. Sure ne stocke pas le montant
-          versé.
+          actuelle moins le total des versements. Ni ce montant ni un prix de
+          revient des titres détenus n'est disponible : il n'y a rien contre
+          quoi mesurer un gain.
+        computed_from_cost_basis: >-
+          Le total des versements n'est pas déclaré : le gain est mesuré contre
+          le prix de revient des titres détenus (%{cost_basis}). Vendre puis
+          racheter à l'intérieur du plan relève ce montant alors que les
+          versements ne bougent pas ; c'est donc un plancher, et l'impôt
+          ci-dessous est le minimum que ce plan puisse devoir. Déclarez le total
+          des versements pour le remplacer.
         loss: >-
           La valeur est inférieure de %{loss} au montant versé. Une moins-value
           n'est pas imposée. Une moins-value réalisée à la clôture du plan peut
@@ -286,6 +389,17 @@ fr:
           La date d'ouverture n'est pas déclarée, le compteur de %{maturity} ans
           ne peut donc pas être vérifié. Le plan est supposé mature. S'il ne
           l'est pas, l'impôt serait de %{immature_tax} au lieu de %{mature_tax}.
+        opening_date_floor_only: >-
+          Sure sait que ce compte détenait des sommes le %{since} : il a donc
+          été ouvert à cette date ou avant — c'est un plancher, pas une date
+          d'ouverture, et il est en deçà des %{maturity} ans qu'exige le
+          compteur. Le plan est supposé mature. S'il ne l'est pas, l'impôt
+          serait de %{immature_tax} au lieu de %{mature_tax}. Corrigez le solde
+          d'ouverture du compte dans Sure, ou déclarez la date ici.
+        mature_by_lower_bound: >-
+          La date d'ouverture n'est pas déclarée, mais ce compte détenait déjà
+          des sommes le %{since}, soit il y a plus de %{maturity} ans. Le
+          compteur est écoulé, quelle que soit la date exacte.
         immature: >-
           Le plan a %{age} ans, soit moins de %{maturity}. Tout retrait le
           clôture et la totalité du gain est imposée au taux plein.
@@ -331,7 +445,17 @@ fr:
       fr_capital_and_gains:
         no_paid_in: >-
           Cette enveloppe se scinde en versements et en gains, imposés sous deux
-          régimes différents. Sure ne stocke pas le montant versé.
+          régimes différents. Ni le montant versé ni un prix de revient des
+          titres détenus n'est disponible : il n'y a rien à scinder.
+        computed_from_cost_basis: >-
+          Le total des versements n'est pas déclaré : le prix de revient des
+          titres détenus (%{cost_basis}) en tient lieu — dans le capital comme
+          dans les gains, de sorte que les deux réunis fassent toujours la
+          valeur entière. C'est le plus élevé des deux montants dès que
+          l'enveloppe a progressé : une part trop grande de la valeur est donc
+          imposée à votre taux marginal, et l'impôt ci-dessous est le maximum
+          que cette enveloppe puisse devoir. Déclarez le total des versements
+          pour le remplacer.
         no_deducted: >-
           La part déduite n'est pas déclarée : la totalité des versements est
           donc supposée avoir été déduite. C'est l'hypothèse la plus imposée.
@@ -384,6 +508,17 @@ fr:
           peut donc pas être vérifié. L'enveloppe est traitée comme mature, ce
           qui donne %{mature_tax} ; si elle ne l'est pas, l'impôt serait de
           %{young_tax}.
+        opening_date_floor_only: >-
+          Sure sait que ce compte détenait des sommes le %{since} : il a donc
+          été ouvert à cette date ou avant — c'est un plancher, pas une date
+          d'ouverture, et il est en deçà des %{years} ans qu'exige le compteur.
+          L'enveloppe est traitée comme mature, ce qui donne %{mature_tax} ; si
+          elle ne l'est pas, l'impôt serait de %{young_tax}. Corrigez le solde
+          d'ouverture du compte dans Sure, ou déclarez la date ici.
+        known_since: >-
+          Aucune date d'ouverture n'est déclarée, mais ce compte détenait déjà
+          des sommes le %{since}, soit il y a plus de %{years} ans. Le compteur
+          est écoulé, quelle que soit la date exacte.
         immature: >-
           Cette enveloppe a %{age} ans, soit moins que les %{years} requises :
           les termes qui dépendent du compteur sont imposés au taux

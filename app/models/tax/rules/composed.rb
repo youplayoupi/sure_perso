@@ -20,6 +20,20 @@ module Tax
       rule_id "composed"
       label "Custom rule"
 
+      # Bases that measure against Tax::Subject#plus_value_base rather than
+      # against the declared payments in, and therefore accept the cost basis
+      # as a stand-in. Named once because three methods below have to agree
+      # about the set, and a base added to two of them would be a term that
+      # computes with a figure nobody split or splits a figure nobody
+      # computed.
+      PLUS_VALUE_BASES = %w[plus_value plus_value_base_deducted].freeze
+
+      # Bases that need the deducted portion resolved before they can be
+      # evaluated.
+      DEDUCTION_SPLIT_BASES = %w[
+        paid_in_deducted paid_in_not_deducted plus_value_base_deducted
+      ].freeze
+
       attr_reader :formula, :name
 
       # `name` is the family's own label for the rule. It is carried rather
@@ -59,11 +73,20 @@ module Tax
           warnings << assumptions.marginal_rate_caveat
         end
 
+        # Only a rule that went through the cascade has provenance to report.
+        # A formula written entirely in `paid_in` terms asked for the declared
+        # figure by name and was given it or refused; captioning that "measured
+        # against the payments you declared" would be telling the reader
+        # something the rule's own name already said, in the same tone the page
+        # uses for a substitution they might want to correct.
+        source = subject.plus_value_base.last if uses_plus_value?
+
         result(
           subject,
           taxable_base: run[:base],
           tax: cents(run[:tax]),
           basis: run[:basis],
+          basis_source: source,
           warnings: warnings,
           household_rate_income: run[:household_rate_income]
         )
@@ -76,7 +99,24 @@ module Tax
         # allowed to be absent because there is a defensible reading of absence
         # -- assume it was all deducted, which taxes the account more, not less.
         def missing_facts(subject)
-          formula.needs.reject { |fact| subject.public_send(fact) }
+          facts = formula.needs.reject { |fact| subject.public_send(fact) }
+
+          # The one base whose requirement this table cannot state: it needs
+          # the payments in *or* the cost basis, and Formula::BASES has no way
+          # to say "or". Without this the account would sail through the check
+          # above, reach #amount_for with nothing to measure against, have its
+          # only term skipped as nil, and come out of #evaluate reading "not
+          # taxed on liquidation" -- a refusal wearing the words of an
+          # exemption, which is the worst sentence this module could print.
+          if uses_plus_value? && subject.plus_value_base.first.nil?
+            facts += [ :paid_in ]
+          end
+
+          facts.uniq
+        end
+
+        def uses_plus_value?
+          formula.terms.any? { |t| PLUS_VALUE_BASES.include?(t.base) }
         end
 
         def refuse_missing(subject, missing)
@@ -88,6 +128,7 @@ module Tax
                         bases: plain_english_bases,
                         facts: words),
             needs: words,
+            missing: missing,
             extra_warnings: missing.include?(:paid_in) ? cost_basis_footnote(subject) : []
           )
         end
@@ -114,9 +155,9 @@ module Tax
 
         # The deducted portion, with absence read the expensive way.
         def resolve_deducted(subject, warnings)
-          return nil unless formula.terms.any? { |t| t.base.start_with?("paid_in") }
+          return nil unless uses_plus_value? || formula.terms.any? { |t| t.base.start_with?("paid_in") }
 
-          paid_in = subject.paid_in
+          paid_in = capital(subject)
           declared = subject.paid_in_deducted
 
           if declared.nil?
@@ -134,8 +175,23 @@ module Tax
           end
         end
 
+        # What a deduction splits.
+        #
+        # A `paid_in_*` term splits the versements and nothing else, because a
+        # rule that names them has said it wants that exact figure. A
+        # `plus_value_base_deducted` term splits whatever the gain was measured
+        # against, which is the versements where they exist and the cost basis
+        # where they do not -- and it has to be the same figure the gain used,
+        # or the two terms stop summing to the value and the account is taxed
+        # on more or less than it holds.
+        def capital(subject)
+          return subject.plus_value_base.first if uses_plus_value?
+
+          subject.paid_in
+        end
+
         def uses_deduction_split?
-          formula.terms.any? { |t| t.base == "paid_in_deducted" || t.base == "paid_in_not_deducted" }
+          formula.terms.any? { |t| DEDUCTION_SPLIT_BASES.include?(t.base) }
         end
 
         # Whether the wrapper has passed its clock, and what to say when nobody
@@ -154,15 +210,41 @@ module Tax
           age = subject.age_years_at(on)
 
           if age.nil?
+            # A lower bound can prove the clock has run, and where it does
+            # there is nothing left to assume and nothing to ask for. Same
+            # treatment as Rules::Fr::Pea, deliberately: a custom rule with a
+            # clock should behave like the built-in one with a clock, or the
+            # rules screen is offering something subtly different from what it
+            # appears to be offering.
+            floor = subject.minimum_age_years_at(on)
+            if floor && floor >= years
+              warnings << msg("composed.known_since",
+                              since: subject.known_since,
+                              years: years)
+              return true
+            end
+
             as_mature = evaluate(subject, mature: true, on: on, rates: rates,
                                  assumptions: assumptions, deducted: deducted)
             as_young  = evaluate(subject, mature: false, on: on, rates: rates,
                                  assumptions: assumptions, deducted: deducted)
 
-            warnings << msg("composed.no_opening_date",
-                            years: years,
-                            mature_tax: amount(cents(as_mature[:tax])),
-                            young_tax: amount(cents(as_young[:tax])))
+            # See Rules::Fr::Pea for why there are two sentences here rather
+            # than one. A floor Sure supplied and this rule could not use has
+            # to be named, or the reader goes looking for the date they already
+            # entered and concludes the module cannot see it.
+            clock = {
+              years: years,
+              mature_tax: amount(cents(as_mature[:tax])),
+              young_tax: amount(cents(as_young[:tax]))
+            }
+
+            warnings << if subject.known_since
+              msg("composed.opening_date_floor_only",
+                  **clock, since: subject.known_since)
+            else
+              msg("composed.no_opening_date", **clock)
+            end
             return true
           end
 
@@ -267,6 +349,8 @@ module Tax
           when "paid_in"               then subject.paid_in
           when "paid_in_deducted"      then deducted
           when "paid_in_not_deducted"  then subject.paid_in - deducted
+          when "plus_value"            then subject.plus_value
+          when "plus_value_base_deducted" then deducted
           end
         end
 
