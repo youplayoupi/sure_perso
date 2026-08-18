@@ -1,0 +1,160 @@
+---
+# The rule library. Its own file, like the rest of this module's locales, so
+# that removing the module is a delete rather than an unpick.
+#
+# `tax.bases` and `tax.rates` are the translatable face of Tax::Vocabulary,
+# which is plain Ruby because the engine has to load without Rails. The English
+# there is the fallback; these are what the screen shows. They must mean the
+# same thing — a reader comparing a rule's explanation with the refusal the
+# report gives them is comparing these words with those.
+en:
+  tax:
+    bases:
+      full_value: the whole balance
+      gain_over_paid_in: the gain over what was paid in
+      gain_over_cost_basis: the gain over cost basis
+      paid_in: the payments in
+      paid_in_deducted: the deducted payments in
+      paid_in_not_deducted: the payments in that were not deducted
+    rates:
+      social_charges: social charges
+      flat_tax: flat tax
+      flat_tax_income_component: income-tax part of the flat tax
+      household_rate: your marginal rate
+      literal: a fixed rate you set
+  settings:
+    tax_rules:
+      not_found: That rule no longer exists.
+      conditions:
+        always: Always
+        mature: Only once the account is old enough
+        immature: Only while the account is too young
+      target:
+        accounts: One account
+        products: Every account of a product you hold
+        other_products: Everything else Sure knows about
+      formula:
+        what: What is taxed
+        rate: Rate
+        when: When it applies
+        always: Always
+        unresolved: >-
+          No rate on file for this date
+      index:
+        page_title: Tax rules
+        mine_title: Your rules
+        mine_subtitle: >-
+          Rules you have written. Each one is a list of terms — something that
+          is taxed, at some rate — added together. Nothing here is code: every
+          field is a choice from a fixed list or a number, so a rule can be
+          wrong but it cannot do anything unexpected.
+        mine_empty: >-
+          You have not written a rule yet. The shipped rules below cover the
+          common French wrappers; write one when your product is not among them,
+          or when its terms differ from the standard ones.
+        untitled: Unnamed rule
+        applies_to: "Applies to: %{target}"
+        edit: Edit
+        delete: Delete
+        delete_confirm: >-
+          Delete this rule? Accounts it covers go back to whatever their
+          product's rule says.
+        invalid: >-
+          This rule does not describe a valid calculation: %{problems}. Accounts
+          it covers are reported as not computed until it is fixed — nothing is
+          assumed in its place.
+        new_rule: Write a rule
+        built_in_title: Rules that ship with this module
+        built_in_subtitle: >-
+          What each shipped rule actually does, in the same terms you would use
+          to write one. These are not descriptions written by hand next to the
+          code — they are generated from the rules themselves, and a test
+          asserts that running them gives the same figure, to the cent, as the
+          arithmetic the engine performs.
+        no_formula: >-
+          This rule's arithmetic is not expressible as terms, so it cannot be
+          shown here.
+        about_title: How to read this page
+        about_body: >-
+          A rule is a sum. Each term takes something the account can tell us —
+          its balance, its gain, what was paid into it — and multiplies it by a
+          rate. The tax is the total. A term can be narrowed two ways, and they
+          are different questions: how old the account is now, and when it was
+          opened.
+        about_rates: >-
+          Named rates are looked up on the date the report is run, so a rule
+          written today keeps giving the right answer after the rates change. A
+          rate you type in is used exactly as written.
+        about_assign_link: Choose which product uses which rule
+        about_rates_link: See or correct the rates themselves
+      new:
+        page_title: Write a tax rule
+        title: Write a tax rule
+        subtitle: >-
+          Build the calculation one term at a time. Nothing is applied to your
+          accounts until you choose what this rule covers.
+      edit:
+        page_title: Edit a tax rule
+        title: Edit a tax rule
+        subtitle: >-
+          Changes take effect the next time the report is drawn. No balance,
+          holding or transaction is touched.
+      form:
+        name_title: Name
+        name_placeholder: My PER
+        name_hint: >-
+          For you, not for the engine. It is what the settings pages call this
+          rule instead of "Custom rule".
+        target_title: What this rule covers
+        target_blank: Choose an account or a product
+        target_hint: >-
+          One account, or every account of one of Sure's products. A rule on an
+          account beats a rule on its product, which is how a PER can be taxed
+          differently from the ordinary account Sure files it alongside.
+        terms_title: The calculation
+        terms_hint: >-
+          One line per thing that is taxed. A pension wrapper taken as a lump
+          sum usually needs two: the payments you deducted from your income are
+          taxed at your marginal rate, and the growth on top takes the flat
+          tax.
+        add_term: Add a term
+        maturity_title: Maturity clock, in years
+        maturity_hint: >-
+          Only needed if a term above depends on the account being old enough —
+          five, for a PEA. The rate file wins over this figure where it has one
+          for the product, so a correction you make there is obeyed here too.
+        notes_title: Assumptions
+        notes_placeholder: >-
+          Assumes the whole wrapper is taken as a lump sum in one tax year.
+        notes_hint: >-
+          One per line. These appear on the report beside the figure this rule
+          produces, which is where an assumption belongs.
+        save: Save the rule
+        create: Create the rule
+        cancel: Cancel
+      term:
+        base_label: What is taxed
+        base_blank: Choose what is taxed
+        base_hint: >-
+          The account has to know this, or the rule declines rather than
+          guessing.
+        rate_label: Rate
+        rate_blank: Choose a rate
+        rate_hint: >-
+          Named rates follow the rate file and change when it does.
+        literal_label: Fixed rate, as a percentage
+        literal_placeholder: "7.5"
+        literal_hint: >-
+          Only for "a fixed rate you set". Enter 7.5 for 7.5%.
+        condition_label: Maturity condition
+        condition_hint: >-
+          How old the account is on the day the report is run.
+        opened_from_label: Opened on or after
+        opened_until_label: Opened on or before
+        remove: Remove this term
+      create:
+        created: Rule created.
+      update:
+        updated: Rule saved.
+      destroy:
+        deleted: Rule deleted.

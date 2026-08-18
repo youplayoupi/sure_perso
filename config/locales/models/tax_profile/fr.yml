@@ -1,0 +1,25 @@
+---
+fr:
+  activerecord:
+    attributes:
+      tax/household:
+        marginal_rate: Taux marginal d'imposition
+      tax/profile:
+        opened_on: Date d'ouverture
+        paid_in: Total des versements
+        paid_in_deducted: Versements déduits
+        product: Produit
+    errors:
+      models:
+        tax/profile:
+          attributes:
+            opened_on:
+              in_the_future: doit être une date passée
+            product:
+              unknown_product: "n'est pas reconnu par ce module (valeurs possibles :
+                %{products})"
+              unsupported_country: "ne peut pas être renseigné : ce module n'a pas
+                encore de règles fiscales pour %{country}"
+    models:
+      tax/household: Paramètres fiscaux du foyer
+      tax/profile: Profil fiscal

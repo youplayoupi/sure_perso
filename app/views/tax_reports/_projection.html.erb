@@ -1,0 +1,80 @@
+<%#
+  Gross against net over the horizon.
+
+  Inline SVG rather than a charting library: two polylines and a filled gap is
+  the whole requirement, and pulling in a chart controller for it would add
+  JavaScript, a data attribute carrying the entire projection as JSON, and a
+  second place for the numbers to be formatted. The shape is the message here,
+  not the tooltips.
+
+  Deliberately unlabelled on the y axis. The figures that matter are printed
+  either side of the chart; gridline labels would be four more numbers to blur
+  in privacy mode for no gain in understanding.
+%>
+<% first = projection.first
+   last  = projection.last
+   gross = projection.map(&:gross)
+   net   = projection.map(&:net)
+   max   = gross.max
+   width  = 720
+   height = 180
+   complete = projection.all?(&:complete?) %>
+
+<%= render DS::Card.new do %>
+  <div class="p-4 space-y-3">
+    <div class="flex flex-wrap items-baseline justify-between gap-2">
+      <h2 class="font-medium text-primary"><%= t("tax_reports.show.projection") %></h2>
+      <p class="text-xs text-secondary">
+        <%= t("tax_reports.show.projection_caption",
+              years: assumptions.horizon_years,
+              return: tax_percent(assumptions.expected_return, precision: 1)) %>
+      </p>
+    </div>
+
+    <% if max.nil? || max.zero? %>
+      <p class="text-sm text-secondary"><%= t("tax_reports.show.projection_empty") %></p>
+    <% else %>
+      <%# role="img" with a text alternative, because the chart carries a
+          conclusion -- how much of the growth is taxed away -- that is not
+          otherwise stated in words anywhere on the page. %>
+      <svg viewBox="0 0 <%= width %> <%= height %>" class="w-full h-auto"
+           preserveAspectRatio="none" role="img"
+           aria-label="<%= t('tax_reports.show.projection_alt',
+                             years: assumptions.horizon_years,
+                             gross: tax_money(last.gross, currency),
+                             net: tax_money(last.net, currency)) %>">
+        <polygon
+          points="<%= tax_chart_points(gross, max: max, width: width, height: height) %> <%= tax_chart_points(net.reverse, max: max, width: width, height: height) %>"
+          fill="currentColor" class="text-warning" fill-opacity="0.12" />
+        <polyline
+          points="<%= tax_chart_points(gross, max: max, width: width, height: height) %>"
+          fill="none" stroke="currentColor" stroke-width="2"
+          vector-effect="non-scaling-stroke" class="text-secondary" />
+        <polyline
+          points="<%= tax_chart_points(net, max: max, width: width, height: height) %>"
+          fill="none" stroke="currentColor" stroke-width="2"
+          vector-effect="non-scaling-stroke" class="text-primary" />
+      </svg>
+
+      <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 text-xs text-secondary">
+        <span><%= format_date(first.on, :long) %></span>
+        <%# Two branches rather than one t() with a ternary key. A key built at
+            runtime is invisible to i18n-tasks and to anyone grepping for it,
+            which is how translations get quietly dropped. %>
+        <span class="tabular-nums privacy-sensitive">
+          <% if complete %>
+            <%= t("tax_reports.show.projection_end",
+                  date: format_date(last.on, :long),
+                  gross: tax_money(last.gross, currency),
+                  net: tax_money(last.net, currency)) %>
+          <% else %>
+            <%= t("tax_reports.show.projection_end_upper_bound",
+                  date: format_date(last.on, :long),
+                  gross: tax_money(last.gross, currency),
+                  net: tax_money(last.net, currency)) %>
+          <% end %>
+        </span>
+      </div>
+    <% end %>
+  </div>
+<% end %>

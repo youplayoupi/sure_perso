@@ -1,0 +1,24 @@
+---
+en:
+  activerecord:
+    attributes:
+      tax/household:
+        marginal_rate: Marginal rate
+      tax/profile:
+        opened_on: Opening date
+        paid_in: Total paid in
+        paid_in_deducted: Deducted payments in
+        product: Product
+    errors:
+      models:
+        tax/profile:
+          attributes:
+            opened_on:
+              in_the_future: is in the future
+            product:
+              unknown_product: is not a product this module knows about (%{products})
+              unsupported_country: "cannot be set: this module has no tax rules for
+                %{country} yet"
+    models:
+      tax/household: Household tax settings
+      tax/profile: Tax profile

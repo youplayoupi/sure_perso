@@ -1,0 +1,99 @@
+---
+# Pendant français de en.yml.
+#
+# Le module ne calcule que des règles françaises : un foyer qui lit cette page
+# est un foyer français, et l'anglais en ferait le seul écran de Sure à
+# ignorer la langue de l'interface.
+fr:
+  settings:
+    tax_rates:
+      none: non renseigné
+      effective_from: En vigueur à partir du
+      rate_percent: Taux, en pourcentage
+      maturity_years: Maturité, en années
+      ceiling: Plafond de versements
+      shipped_was: "Ce module livre %{value}"
+      add_rate: Ajouter un taux daté
+      remove_row: Retirer cette ligne
+      sections:
+        social_charges: Prélèvements sociaux
+        flat_tax_income_component: Flat tax, part impôt sur le revenu
+        flat_tax: Flat tax (PFU)
+        products: Produits
+      hints:
+        social_charges: >-
+          Prélèvements sociaux sur les revenus du capital. Appliqués par
+          presque toutes les règles du module : une correction ici déplace
+          l'essentiel du rapport.
+        flat_tax_income_component: >-
+          Uniquement la part impôt sur le revenu du PFU. Le taux global de la
+          flat tax est celui-ci plus les prélèvements sociaux ; il est affiché
+          plus bas plutôt que saisi ici, le module additionnant les deux pour
+          qu'ils ne puissent pas diverger.
+      show:
+        page_title: Taux d'imposition
+        rates_title: Taux
+        rates_subtitle: >-
+          Les chiffres par lesquels les règles multiplient. Tous les taux
+          livrés sont affichés, y compris ceux qui ne sont pas encore entrés
+          en vigueur, car un taux est lu à la date d'établissement du rapport :
+          corriger aujourd'hui le taux de l'an prochain laisse le rapport de
+          l'an dernier se reproduire à l'identique.
+        composites_title: Taux composés d'autres taux
+        composites_subtitle: >-
+          Chiffres que le fichier du pays déclare comme la somme des taux
+          ci-dessus, affichés ici parce que ce sont ceux que l'on se cite entre
+          soi. Ils ne se saisissent pas directement : un champ ici serait un
+          second endroit où modifier le même nombre, et les deux divergeraient
+          dès la première utilisation. Corrigez une part ci-dessus et le total
+          suit.
+        composite_parts: "Somme de %{parts}"
+        products_title: Paramètres des produits
+        products_subtitle: >-
+          Ce que les règles doivent savoir de chaque enveloppe. La maturité est
+          l'ancienneté à partir de laquelle une règle traite le compte
+          autrement — cinq ans pour un PEA. Le plafond porte toujours sur le
+          cumul des versements, jamais sur la valeur actuelle du compte.
+        edited_title: Vous avez corrigé certains de ces chiffres
+        edited_body: >-
+          Vos propres chiffres s'appliquent pour %{sections}, et le rapport est
+          calculé à partir d'eux. Ces sections ne suivent plus le fichier livré
+          avec ce module : elles ne reprendront pas les chiffres d'une version
+          future tant que vous ne les aurez pas effacées.
+        reset: Revenir aux chiffres livrés
+        reset_confirm: >-
+          Abandonner toutes les corrections de cette page et revenir à ce que
+          livre le module ? Le rapport sera calculé à partir des chiffres
+          livrés dès la prochaine fois qu'il sera établi.
+        save: Enregistrer ces chiffres
+        cancel: Annuler
+        about_title: Comment se comporte cette page
+        about_upgrades: >-
+          Seul ce que vous modifiez est enregistré. Un chiffre que vous laissez
+          tel quel continue de suivre le fichier livré avec ce module : une
+          version future portant un nouveau taux vous le donnera
+          automatiquement. Un chiffre que vous corrigez devient le
+          vôtre et le reste au fil des mises à jour — c'est bien l'objectif,
+          mais cela signifie qu'une section corrigée une fois ne se mettra plus
+          à jour d'elle-même.
+        about_dates: >-
+          C'est la date qui identifie un taux, non sa position dans la liste.
+          C'est ce qui permet à un rapport établi pour l'an dernier de
+          continuer d'utiliser le taux de l'an dernier. Cela signifie aussi que
+          changer la date d'une ligne livrée ajoute un second taux au lieu de
+          déplacer le premier : pour corriger un taux livré, modifiez le taux
+          et laissez sa date.
+        about_deletion: >-
+          Retirer une ligne livrée par le module ne la supprime pas : vos
+          corrections se superposent au fichier livré, et une correction peut
+          fixer un chiffre mais pas en enlever un. La ligne réapparaîtra au
+          prochain chargement de cette page. Pour empêcher un taux livré de
+          s'appliquer, donnez-lui une autre valeur plutôt que de le retirer.
+        about_rules_link: Voir quelles règles utilisent ces chiffres
+      update:
+        saved: Taux enregistrés.
+        unchanged: >-
+          Rien ne diffère de ce que livre le module : aucune correction n'a été
+          enregistrée.
+      destroy:
+        reset: Retour aux chiffres livrés avec ce module.

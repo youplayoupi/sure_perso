@@ -1,0 +1,152 @@
+<%= content_for :page_title, t(".page_title") %>
+
+<%# ---- The household's own rate ------------------------------------------
+    First on the page, and not because it is the most-used control -- it is
+    set once and then never again. It is first because everything below it is
+    about accounts and products, and this is the one thing here that is about
+    the people. Leaving it to the bottom, or to a screen of its own, would put
+    the report's largest single assumption behind the least likely click.
+
+    One field. The whole apparatus this replaced -- a mode, other income,
+    a number of parts, all passed as URL parameters -- computed a French
+    five-band scale from defaults nobody ever changed, which is to say it
+    taxed every large withdrawal as though it were the household's only
+    income. A rate read off last year's assessment is less machinery and
+    better arithmetic. %>
+<%= settings_section title: t(".household_title"), subtitle: t(".household_subtitle") do %>
+  <div class="@container space-y-3">
+    <%= styled_form_with url: settings_taxes_household_path,
+                         method: :patch,
+                         scope: :tax_household,
+                         class: "space-y-3" do |f| %>
+      <div class="grid gap-3 @xl:grid-cols-[minmax(0,12rem)_auto] items-end">
+        <%= f.text_field :marginal_rate,
+                         value: tax_percent_field(@household.marginal_rate),
+                         label: t(".household_rate_label"),
+                         placeholder: "30",
+                         inputmode: "decimal" %>
+        <%= f.submit t(".household_save") %>
+      </div>
+    <% end %>
+
+    <p class="text-xs text-subdued max-w-prose">
+      <%= @household.declared? ? t(".household_declared") : t(".household_undeclared") %>
+    </p>
+  </div>
+<% end %>
+
+<%= settings_section title: t(".rules_title"), subtitle: t(".rules_subtitle", country: @country) do %>
+  <%# @container so each product row decides for itself whether the label and
+      its rule selector fit side by side. The settings column is one width on
+      a phone, another with the sidebar out, and a third on a wide screen. %>
+  <div class="@container space-y-6">
+    <%# The denominator is the products this family holds, not the eighty-odd
+        in Sure's world catalogue. "19 of 86" would describe Sure's breadth
+        and say nothing about whether this portfolio can be computed, which is
+        the only question the sentence is there to answer. %>
+    <p class="text-sm text-secondary">
+      <%= t(".coverage_summary",
+            covered: @held.count(&:covered?),
+            total: @held.size) %>
+    </p>
+
+    <%# The selectors below name rules but cannot explain them: "PEA (gain net,
+        5-year clock)" is a claim the reader has no way to check from here. The
+        library is where that claim is spelled out in full, which makes this
+        link part of the choice rather than a footnote to it. %>
+    <p class="text-sm flex flex-wrap gap-x-4 gap-y-1">
+      <%= link_to t(".library_link"), settings_taxes_rules_path, class: "text-link hover:underline" %>
+      <%# The other half of the same question. A rule says what is taxed; the
+          rates say by how much. Someone who disagrees with a figure in the
+          report is as likely to be disagreeing with the number as with the
+          shape, and until this link existed only one of those was reachable. %>
+      <%= link_to t(".rates_link"), settings_taxes_rates_path, class: "text-link hover:underline" %>
+    </p>
+
+    <% if @held.any? %>
+      <%= render "settings/taxes/products", entries: @held %>
+    <% else %>
+      <p class="text-sm text-secondary"><%= t(".no_products") %></p>
+    <% end %>
+  </div>
+<% end %>
+
+<%# Everything Sure knows about that this family does not hold.
+    Behind a disclosure rather than dropped, because the promise this module
+    makes -- a subtype added in a future Sure release turns up here rather
+    than being quietly taxed by a rule written for something else -- has to
+    keep holding for a product nobody owns yet. Closed by default, because
+    choosing a French rule for a Thrift Savings Plan changes no number on any
+    report until somebody opens such an account. %>
+<% if @unheld.any? %>
+  <%= settings_section title: t(".other_title"), subtitle: t(".other_subtitle") do %>
+    <div class="@container">
+      <details class="group">
+        <summary class="cursor-pointer text-sm text-link hover:underline list-none">
+          <%= t(".other_toggle", count: @unheld.size) %>
+        </summary>
+
+        <div class="mt-4 space-y-6">
+          <%= render "settings/taxes/products", entries: @unheld %>
+        </div>
+      </details>
+    </div>
+  <% end %>
+<% end %>
+
+<%# The escape hatch for a product Sure has no subtype for. PER is the live
+    example: there is nothing for a per-product rule to key on, so the rule
+    goes on the account. When Sure ships the subtype, the row above covers it
+    and this one can be deleted with no change in output. %>
+<%= settings_section title: t(".pinned_title"), subtitle: t(".pinned_subtitle") do %>
+  <div class="@container space-y-4">
+    <% if @pinned.any? %>
+      <ul class="divide-y divide-alpha-black-100 theme-dark:divide-alpha-white-100">
+        <% @pinned.each do |rule| %>
+          <li class="flex items-start justify-between gap-4 py-3">
+            <div class="min-w-0 text-sm">
+              <p class="text-primary font-medium truncate"><%= rule.target_label %></p>
+              <p class="text-secondary"><%= rule.description %></p>
+            </div>
+            <%= button_to t(".unpin"),
+                          pinned_rule_settings_taxes_path(id: rule.id),
+                          method: :delete,
+                          class: "text-sm text-destructive hover:underline shrink-0",
+                          form: { data: { turbo_confirm: t(".unpin_confirm") } } %>
+          </li>
+        <% end %>
+      </ul>
+    <% end %>
+
+    <% if @pinnable.any? %>
+      <%= styled_form_with url: pinned_rules_settings_taxes_path,
+                           scope: :tax_rule,
+                           method: :post,
+                           class: "space-y-3" do |f| %>
+        <div class="grid gap-3 @xl:grid-cols-2">
+          <%= f.select :account_id,
+                       @pinnable.map { |a| [ a.name, a.id ] },
+                       { label: t(".pin_account_label"),
+                         include_blank: t(".pin_account_blank") } %>
+          <%= f.select :kind,
+                       @catalogue.map { |rule_id, (klass, _d)| [ tax_rule_label(rule_id, klass.label), rule_id ] },
+                       { label: t(".pin_rule_label"),
+                         include_blank: t(".pin_rule_blank") } %>
+        </div>
+        <%= f.submit t(".pin_submit") %>
+      <% end %>
+    <% else %>
+      <p class="text-sm text-secondary"><%= t(".pin_no_accounts") %></p>
+    <% end %>
+  </div>
+<% end %>
+
+<%= settings_section title: t(".about_title") do %>
+  <div class="text-sm text-secondary space-y-3">
+    <p><%= t(".about_body") %></p>
+    <p><%= t(".about_unknown") %></p>
+    <p>
+      <%= link_to t(".about_report_link"), tax_report_path, class: "text-link hover:underline" %>
+    </p>
+  </div>
+<% end %>

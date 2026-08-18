@@ -1,0 +1,28 @@
+<%# locals: (entries:) %>
+<%# Grouped by Sure's account type, in Sure's own order, because that is the
+    order the account list uses and this page is a mirror of it. The grouping
+    is not cosmetic: it is what makes an entire type having no rule -- Crypto,
+    say -- visible as a block rather than as scattered rows.
+
+    Extracted into its own partial so the held products and the rest of Sure's
+    catalogue are rendered by the same code. Two copies would drift, and the
+    difference between the two halves is which entries go in, not how a row
+    looks. %>
+<% entries.group_by(&:accountable_type).each do |accountable_type, group| %>
+  <section class="space-y-2">
+    <div class="flex items-center gap-2">
+      <h3 class="uppercase text-secondary font-medium text-xs"><%= accountable_type %></h3>
+      <%= render "shared/ruler", classes: "w-full" %>
+    </div>
+
+    <div class="space-y-3">
+      <% group.each do |entry| %>
+        <%= render "settings/taxes/product",
+                   entry: entry,
+                   built_in: @built_in.rule_for(entry.accountable_type, entry.subtype),
+                   selected: @selected[[ entry.accountable_type, entry.subtype ]],
+                   catalogue: @catalogue %>
+      <% end %>
+    </div>
+  </section>
+<% end %>

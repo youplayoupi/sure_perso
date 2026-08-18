@@ -1,0 +1,157 @@
+# French tax parameters, versioned by effective date.
+#
+# This file is DATA. No rule logic lives here, and nothing in it is
+# constantized -- rules are registered in Ruby (app/models/tax/registry.rb) so
+# that editing this file can change a number but can never execute code.
+#
+# Every block carries `effective_from`. The engine picks the latest block whose
+# effective_from is <= the valuation date, so a historic valuation stays
+# correct after a rate change and a future rate can be committed early.
+#
+# A self-hoster who needs to correct a rate edits this file and restarts. That
+# is the whole point of keeping it out of the code.
+#
+# LANGUAGE. Every string a reader sees from this file -- `label`, `note` -- is
+# written in the language of the country the file is for, and is not passed
+# through a translation table. That is not an oversight, and it is the one
+# place in this module where a sentence is allowed to be untranslated.
+#
+# The engine's own prose goes the other way: it names its sentences (see
+# Tax::Message) so that config/locales can carry a French copy of each one. It
+# can do that because the engine ships a fixed, enumerable list of sentences.
+# A rate file does not. A self-hoster correcting a rate writes their own note
+# about why, in their own words, and a translation key for it could only ever
+# be filled in by them. The same is true of Tax::Rules::Composed carrying the
+# name a family typed for their own rule, which TaxReportsHelper#tax_message
+# also passes through untouched.
+#
+# So `Compte-titres ordinaire` stays as it is rather than becoming
+# `products.cto.label`, and the notes below are in French for the same reason
+# the labels beside them always were. A file added for another country states
+# its own rates in its own language, which is the language of the households
+# that will read it.
+
+country: FR
+currency: EUR
+
+# ---------------------------------------------------------------------------
+# Prelevements sociaux (PS) on investment income.
+# Rose from 17.2% to 18.6% on 2026-01-01 under the LFSS 2026 (CSG 9.2 -> 10.6).
+# ---------------------------------------------------------------------------
+social_charges:
+  - effective_from: 2018-01-01
+    rate: 0.172
+    note: "CSG 9,2 + CRDS 0,5 + prélèvement de solidarité 7,5"
+  - effective_from: 2026-01-01
+    rate: 0.186
+    note: "LFSS 2026 : CSG portée de 9,2 à 10,6"
+
+# ---------------------------------------------------------------------------
+# Prelevement forfaitaire unique (PFU / "flat tax") -- income tax part only.
+# The headline 30% / 31.4% is this plus social_charges above. The engine adds
+# them rather than storing the total, so a PS change propagates automatically
+# and the two numbers can never drift apart.
+# ---------------------------------------------------------------------------
+flat_tax_income_component:
+  - effective_from: 2018-01-01
+    rate: 0.128
+
+# ---------------------------------------------------------------------------
+# Rates this file does not state because they are the sum of rates it does.
+#
+# The PFU is the only one today. Storing 0.30 beside its two components is how
+# a corrected social-charge rate ends up applied in one place and not the
+# other; summing on the way out means there is only ever one number to correct.
+#
+# The names on the left are usable in a formula term exactly like a section
+# name, so a household writing its own rule picks "flat_tax" from the same menu
+# as "social_charges" and does not need to know which of the two the file
+# happens to store directly.
+# ---------------------------------------------------------------------------
+composites:
+  flat_tax: [ flat_tax_income_component, social_charges ]
+
+# The income-tax scale used to live here: five bands, two vintages, and a
+# quotient familial. It was removed deliberately. Running it needed the
+# household's other taxable income and its number of parts, neither of which
+# Sure knows, so both were asked for on a form and both were routinely left at
+# their defaults of zero and one -- which produces a bill for a large
+# withdrawal that is wrong by a wide margin and presented with the same
+# confidence as the rates above. What replaced it is a single marginal rate the
+# household sets once, under Taxes. That is a number they can read off last
+# year's assessment, and it is a question with an answer in more countries than
+# just this one.
+
+# ---------------------------------------------------------------------------
+# Product parameters.
+#
+# A "product" is what a rule needs to know; it is NOT the same thing as a Sure
+# subtype. Sure files a Livret A and an ordinary taxable livret under the same
+# `Depository/savings` subtype, so the product cannot always be inferred and is
+# sometimes declared per account. See Tax::Subject#product.
+#
+# `ceiling` is on cumulative payments in (versements), never on current value.
+# ---------------------------------------------------------------------------
+products:
+  pea:
+    label: "PEA"
+    maturity_years: 5
+    ceiling: 150000
+  pea_pme:
+    label: "PEA-PME"
+    maturity_years: 5
+    ceiling: 225000
+  pea_jeune:
+    label: "PEA Jeune"
+    maturity_years: 5
+    ceiling: 20000
+  cto:
+    label: "Compte-titres ordinaire"
+  per:
+    label: "Plan d'épargne retraite"
+  livret_a:
+    label: "Livret A"
+    ceiling: 22950
+  ldds:
+    label: "LDDS"
+    ceiling: 12000
+  lep:
+    label: "Livret d'épargne populaire"
+    ceiling: 10000
+  livret_jeune:
+    label: "Livret Jeune"
+    ceiling: 1600
+  taxable_savings:
+    label: "Compte sur livret (taxable)"
+  cash:
+    label: "Cash"
+
+# ---------------------------------------------------------------------------
+# Known gaps. Surfaced in the report rather than silently ignored.
+# ---------------------------------------------------------------------------
+unmodelled:
+  - id: taux_historiques
+    applies_to: [pea, pea_pme, pea_jeune]
+    note: >
+      Pour un PEA ouvert entre 2013 et 2017, une partie du gain peut être
+      soumise aux taux de prélèvements sociaux en vigueur au moment où elle a
+      été acquise, et non au taux actuel. Non modélisé ; le moteur émet un
+      avertissement lorsque la date d'ouverture tombe dans cette période.
+  - id: per_exit_annuity
+    applies_to: [per]
+    note: >
+      Seule la sortie en capital est modélisée. La sortie en rente relève d'un
+      régime entièrement différent.
+  - id: bareme_option_on_securities
+    applies_to: [cto]
+    note: >
+      Le moteur retient le PFU. L'option pour le barème peut être plus
+      favorable à faible revenu ; elle n'est pas modélisée.
+  - id: abattement_pre_2018
+    applies_to: [cto]
+    note: "Les abattements pour titres acquis avant 2018 ne sont pas modélisés."
+  - id: loss_carry_forward
+    applies_to: [cto, pea, pea_pme, pea_jeune]
+    note: >
+      Les moins-values réalisées s'imputent sur les plus-values pendant 10 ans.
+      Non modélisé.

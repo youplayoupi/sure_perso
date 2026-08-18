@@ -336,6 +336,31 @@ Rails.application.routes.draw do
     resource :ai_prompts, only: :show
     resource :llm_usage, only: :show
     resource :guides, only: :show
+    # Tax module. See the `resource :tax_report` block further down.
+    resource :taxes, only: %i[show update] do
+      post "pinned", to: "taxes#create", as: :pinned_rules
+      delete "pinned/:id", to: "taxes#destroy", as: :pinned_rule
+
+      # The rule library: what every rule actually does, and a builder for
+      # writing one. Nested under taxes because a rule means nothing without
+      # the page that says which product it applies to, and a reader who lands
+      # on one should be one click from the other.
+      resources :rules, controller: "tax_rules",
+                        only: %i[index new create edit update destroy]
+
+      # The numbers those rules multiply by. Singular, because a family has one
+      # set of corrections per country rather than a collection of them, and
+      # `destroy` means "go back to what the module ships".
+      resource :rates, controller: "tax_rates", only: %i[show update destroy]
+
+      # The household's own marginal rate of income tax. Update only: the form
+      # lives at the top of the Taxes page rather than on a screen of its own,
+      # because it is one field and because it is the first thing that has to
+      # be right before anything below it means much. No `destroy` -- clearing
+      # the field is how you go back to undeclared, and a second way to do the
+      # same thing would only be a second thing to keep working.
+      resource :household, controller: "tax_households", only: :update
+    end
     get "bank_sync", to: redirect("/settings/providers", status: 301)
     resource :providers, only: %i[show update] do
       collection do
@@ -381,6 +406,26 @@ Rails.application.routes.draw do
 
   # Hub page fronting budgets + goals under a single "Plan" nav entry.
   resource :plan, only: :show
+
+  # After-tax reporting. One read-only page, plus a form per account for
+  # declaring the facts Sure has nowhere else to store. Configuration -- which
+  # rule applies to which of Sure's products -- lives under the settings
+  # namespace above, next to the other things a family sets once.
+  #
+  # Edits this module makes to files that already existed, in full: this block,
+  # the `resource :taxes` line in the settings namespace, the nav entry in
+  # layouts/application.html.erb and the one in settings/_settings_nav.html.erb.
+  # Three files, additions only. The labels those two entries read are not
+  # among them -- they live in the module's own locale files, because I18n
+  # deep-merges and a key resolves the same wherever it was declared.
+  # Everything else is a new file, so removing the module is a delete rather
+  # than an unpick.
+  resource :tax_report, only: :show
+  namespace :tax do
+    resources :accounts, only: [] do
+      resource :profile, only: %i[edit update]
+    end
+  end
 
   resources :budgets, only: %i[index show edit update], param: :month_year do
     post :copy_previous, on: :member

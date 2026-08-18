@@ -1,0 +1,64 @@
+<%# locals: (presenter:) %>
+<%#
+  One formula, rendered read-only. The same partial draws a rule that ships
+  with this module and one a family wrote, which is the point: a reader can
+  only judge whether their own rule is right by comparing it with a shipped one
+  that is, and they can only compare two things described the same way.
+
+  Both the sentence and the table, deliberately. The sentence is what someone
+  reads once to decide whether this is the rule they meant; the table is what
+  they scan when they already know and want the rate. Neither alone does both
+  jobs, and the table's rows are the presenter's own line parts, so the two can
+  never say different things.
+%>
+
+<div class="space-y-3">
+  <p class="text-sm text-primary max-w-prose"><%= tax_message(presenter.headline) %></p>
+
+  <% if presenter.lines.any? %>
+    <div class="rounded-lg border border-secondary border-xs overflow-hidden">
+      <table class="w-full text-xs">
+        <thead class="bg-surface-inset text-subdued">
+          <tr>
+            <th class="text-left font-medium px-3 py-2"><%= t("settings.tax_rules.formula.what") %></th>
+            <th class="text-left font-medium px-3 py-2"><%= t("settings.tax_rules.formula.rate") %></th>
+            <th class="text-left font-medium px-3 py-2"><%= t("settings.tax_rules.formula.when") %></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-alpha-black-100 theme-dark:divide-alpha-white-100">
+          <% presenter.lines.each do |line| %>
+            <tr>
+              <td class="px-3 py-2 text-primary align-top"><%= tax_message(line.base) %></td>
+              <td class="px-3 py-2 align-top">
+                <span class="<%= line.unresolved? ? "text-warning" : "text-primary" %>">
+                  <%= tax_message(line.rate) %>
+                </span>
+                <%# A rate the table cannot resolve is named but not numbered.
+                    Saying so on the row beats leaving a reader to wonder why
+                    this one line has no percentage. %>
+                <% if line.unresolved? %>
+                  <span class="block text-subdued"><%= t("settings.tax_rules.formula.unresolved") %></span>
+                <% end %>
+              </td>
+              <td class="px-3 py-2 text-secondary align-top">
+                <%= line.when_clause ? tax_message(line.when_clause) : t("settings.tax_rules.formula.always") %>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% end %>
+
+  <%# The facts an account has to carry. Shown because the commonest
+      disappointment with this module is a rule that declines, and the reason
+      it declines is always here -- before the rule is chosen rather than after
+      the report has refused. %>
+  <% if presenter.needs_sentence %>
+    <p class="text-xs text-subdued"><%= tax_message(presenter.needs_sentence) %></p>
+  <% end %>
+
+  <% presenter.notes.each do |note| %>
+    <p class="text-xs text-secondary max-w-prose"><%= tax_message(note) %></p>
+  <% end %>
+</div>

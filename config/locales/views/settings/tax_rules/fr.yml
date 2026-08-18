@@ -1,0 +1,165 @@
+---
+# Pendant français de en.yml.
+#
+# `tax.bases` et `tax.rates` sont le visage traduisible de Tax::Vocabulary, qui
+# reste en anglais dans le code parce que le moteur doit se charger sans Rails.
+# Ces libellés doivent dire exactement la même chose que les refus du rapport :
+# un lecteur qui compare l'explication d'une règle au message qui lui refuse un
+# compte compare ces mots-là avec ceux-là.
+fr:
+  tax:
+    bases:
+      full_value: la totalité du solde
+      gain_over_paid_in: la plus-value sur les versements
+      gain_over_cost_basis: la plus-value sur le prix de revient
+      paid_in: les versements
+      paid_in_deducted: les versements déduits
+      paid_in_not_deducted: les versements non déduits
+    rates:
+      social_charges: prélèvements sociaux
+      flat_tax: flat tax (PFU)
+      flat_tax_income_component: part impôt sur le revenu du PFU
+      household_rate: votre taux marginal
+      literal: un taux fixe que vous saisissez
+  settings:
+    tax_rules:
+      not_found: Cette règle n'existe plus.
+      conditions:
+        always: Toujours
+        mature: Seulement une fois le compte assez ancien
+        immature: Seulement tant que le compte est trop récent
+      target:
+        accounts: Un compte
+        products: Tous les comptes d'un produit que vous détenez
+        other_products: Tout le reste de ce que Sure connaît
+      formula:
+        what: Ce qui est imposé
+        rate: Taux
+        when: Quand cela s'applique
+        always: Toujours
+        unresolved: >-
+          Aucun taux au fichier pour cette date
+      index:
+        page_title: Règles fiscales
+        mine_title: Vos règles
+        mine_subtitle: >-
+          Les règles que vous avez écrites. Chacune est une liste de termes —
+          quelque chose d'imposé, à un certain taux — que l'on additionne. Rien
+          ici n'est du code : chaque champ est un choix dans une liste fermée ou
+          un nombre, si bien qu'une règle peut être fausse mais ne peut rien
+          faire d'imprévu.
+        mine_empty: >-
+          Vous n'avez pas encore écrit de règle. Les règles livrées ci-dessous
+          couvrent les enveloppes françaises courantes ; écrivez-en une lorsque
+          votre produit n'y figure pas, ou lorsque ses conditions diffèrent des
+          conditions standard.
+        untitled: Règle sans nom
+        applies_to: "S'applique à : %{target}"
+        edit: Modifier
+        delete: Supprimer
+        delete_confirm: >-
+          Supprimer cette règle ? Les comptes qu'elle couvre reviennent à ce que
+          dit la règle de leur produit.
+        invalid: >-
+          Cette règle ne décrit pas un calcul valide : %{problems}. Les comptes
+          qu'elle couvre sont signalés comme non calculés tant qu'elle n'est pas
+          corrigée — rien n'est supposé à sa place.
+        new_rule: Écrire une règle
+        built_in_title: Les règles livrées avec ce module
+        built_in_subtitle: >-
+          Ce que fait réellement chaque règle livrée, dans les mêmes termes que
+          ceux dont vous disposez pour en écrire une. Ce ne sont pas des
+          descriptions écrites à la main à côté du code : elles sont produites à
+          partir des règles elles-mêmes, et un test vérifie que les exécuter
+          donne le même montant, au centime près, que l'arithmétique du moteur.
+        no_formula: >-
+          L'arithmétique de cette règle ne s'exprime pas en termes : elle ne
+          peut donc pas être affichée ici.
+        about_title: Comment lire cette page
+        about_body: >-
+          Une règle est une somme. Chaque terme prend quelque chose que le
+          compte sait dire — son solde, sa plus-value, ce qui y a été versé — et
+          le multiplie par un taux. L'impôt est le total. Un terme peut être
+          restreint de deux façons, et ce sont deux questions différentes :
+          quel âge a le compte aujourd'hui, et quand a-t-il été ouvert.
+        about_rates: >-
+          Les taux nommés sont lus à la date à laquelle le rapport est établi :
+          une règle écrite aujourd'hui continue donc de donner la bonne réponse
+          après un changement de taux. Un taux que vous saisissez est appliqué
+          tel quel.
+        about_assign_link: Choisir quel produit utilise quelle règle
+        about_rates_link: Voir ou corriger les taux eux-mêmes
+      new:
+        page_title: Écrire une règle fiscale
+        title: Écrire une règle fiscale
+        subtitle: >-
+          Construisez le calcul terme par terme. Rien n'est appliqué à vos
+          comptes tant que vous n'avez pas choisi ce que cette règle couvre.
+      edit:
+        page_title: Modifier une règle fiscale
+        title: Modifier une règle fiscale
+        subtitle: >-
+          Les modifications prennent effet au prochain rapport. Aucun solde,
+          aucune position, aucune transaction n'est touché.
+      form:
+        name_title: Nom
+        name_placeholder: Mon PER
+        name_hint: >-
+          Pour vous, pas pour le moteur. C'est ainsi que les pages de réglages
+          appelleront cette règle au lieu de « Règle personnalisée ».
+        target_title: Ce que cette règle couvre
+        target_blank: Choisissez un compte ou un produit
+        target_hint: >-
+          Un compte, ou tous les comptes de l'un des produits de Sure. Une règle
+          posée sur un compte l'emporte sur celle de son produit : c'est ainsi
+          qu'un PER peut être imposé autrement que le compte ordinaire auprès
+          duquel Sure le range.
+        terms_title: Le calcul
+        terms_hint: >-
+          Une ligne par chose imposée. Une enveloppe retraite sortie en capital
+          en demande généralement deux : les versements que vous avez déduits de
+          votre revenu sont imposés à votre taux marginal, et la plus-value
+          au-dessus prend le PFU.
+        add_term: Ajouter un terme
+        maturity_title: Durée de maturité, en années
+        maturity_hint: >-
+          Utile seulement si un terme ci-dessus dépend de l'ancienneté du compte
+          — cinq ans, pour un PEA. Le fichier de taux l'emporte sur ce chiffre
+          lorsqu'il en a un pour le produit : une correction que vous y faites
+          est donc respectée ici aussi.
+        notes_title: Hypothèses
+        notes_placeholder: >-
+          Suppose que toute l'enveloppe est retirée en capital la même année.
+        notes_hint: >-
+          Une par ligne. Elles apparaissent dans le rapport à côté du montant
+          produit par cette règle, là où une hypothèse a sa place.
+        save: Enregistrer la règle
+        create: Créer la règle
+        cancel: Annuler
+      term:
+        base_label: Ce qui est imposé
+        base_blank: Choisissez ce qui est imposé
+        base_hint: >-
+          Le compte doit connaître cette donnée, sinon la règle refuse plutôt
+          que de deviner.
+        rate_label: Taux
+        rate_blank: Choisissez un taux
+        rate_hint: >-
+          Les taux nommés suivent le fichier de taux et changent avec lui.
+        literal_label: Taux fixe, en pourcentage
+        literal_placeholder: "7,5"
+        literal_hint: >-
+          Seulement pour « un taux fixe que vous saisissez ». Saisissez 7,5 pour
+          7,5 %.
+        condition_label: Condition d'ancienneté
+        condition_hint: >-
+          L'âge du compte le jour où le rapport est établi.
+        opened_from_label: Ouvert le ou après le
+        opened_until_label: Ouvert le ou avant le
+        remove: Retirer ce terme
+      create:
+        created: Règle créée.
+      update:
+        updated: Règle enregistrée.
+      destroy:
+        deleted: Règle supprimée.
