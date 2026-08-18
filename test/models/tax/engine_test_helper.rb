@@ -51,6 +51,12 @@ module TaxEngineTestHelper
     tax/rules/fr/deposit
     tax/rules/fr/capital_and_gains
     tax/rules/fr/capital_and_gains_at_household_rate
+    tax/rules/cash_deposit
+    tax/rules/us/securities
+    tax/rules/us/deferred
+    tax/rules/gb/capital_gains
+    tax/rules/gb/pension
+    tax/rules/in/equity
     tax/catalogue
     tax/registry
     tax/snapshot

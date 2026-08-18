@@ -1,0 +1,59 @@
+# United States federal tax parameters, versioned by effective date.
+#
+# DATA, like every file in this directory: nothing here is constantized, so a
+# self-hoster editing a rate changes a number and can never execute code.
+#
+# What is deliberately NOT here: the ordinary income-tax brackets and the
+# 0 / 15 / 20 long-term capital-gains breakpoints. Which long-term bracket a
+# household lands in depends on its total taxable income, which Sure does not
+# know -- exactly the reasoning that removed France's five-band scale. The
+# report assumes the middle 15% band and says so, and a household that knows
+# it sits in the 0% or 20% band corrects `long_term_gains` on the rates screen.
+# The number is therefore stored as a plain correctable rate rather than as a
+# schedule the engine would have to run against income it does not have.
+
+country: US
+currency: USD
+
+# Long-term capital-gains rate (assets held > 1 year). The federal schedule is
+# 0 / 15 / 20 by income; 15% is the middle band and the assumed default.
+long_term_gains:
+  - effective_from: 2018-01-01
+    rate: 0.15
+    note: "Middle federal LTCG band. Actual rate is 0 / 15 / 20 by taxable income."
+
+# Net Investment Income Tax: an extra 3.8% above high-income thresholds
+# (MAGI over $200k single / $250k joint). Applied only via the composite
+# below, which a high earner elects on the rates screen; off by default
+# because most households are under the threshold.
+niit:
+  - effective_from: 2013-01-01
+    rate: 0.038
+
+# The long-term rate with NIIT added, for households above the threshold.
+# A composite so the two parts can never drift: correct long_term_gains and
+# this moves with it.
+composites:
+  long_term_gains_with_niit: [ long_term_gains, niit ]
+
+# Product metadata (labels/ceilings). Wrapper tax treatment is decided by the
+# registry mapping Sure's subtypes onto rules, not here.
+products:
+  brokerage:
+    label: "Taxable brokerage account"
+
+# Things US tax reaches that this module does not model, named so an
+# incomplete total says which parts are missing.
+unmodelled:
+  - id: state_tax
+    label: "State capital-gains tax"
+    reason: >-
+      Most states tax capital gains on top of the federal rate, from zero to
+      double digits. Which state applies is not something Sure records, so only
+      the federal figure is shown.
+  - id: short_term
+    label: "Short-term gains (held one year or less)"
+    reason: >-
+      Short-term gains are taxed as ordinary income, not at the long-term rate.
+      Sure does not record per-lot holding periods, so the report assumes
+      long-term treatment and states it.

@@ -52,6 +52,33 @@ module Tax
           Rules::Exempt,
           "Genuinely untaxed on liquidation. Reports zero, and means it."
         ],
+        "cash_deposit" => [
+          Rules::CashDeposit,
+          "Cash deposit: withdrawing the balance is not a taxable event; " \
+          "interest is taxed as it arises, outside this report."
+        ],
+        "us_securities" => [
+          Rules::Us::Securities,
+          "US taxable account: latent gain taxed at the long-term capital-gains " \
+          "rate (0/15/20 by income; the middle band is assumed)."
+        ],
+        "us_deferred" => [
+          Rules::Us::Deferred,
+          "US pre-tax retirement account (Traditional 401(k)/IRA): the whole " \
+          "balance taxed as income at your marginal rate on withdrawal."
+        ],
+        # gb_capital_gains and gb_pension are deliberately NOT offered here.
+        # Both choose their rate from a household assertion rather than from a
+        # fixed rate on the valuation date, so neither can declare a formula the
+        # rules screen could render -- and a pinnable rule that cannot explain
+        # itself is exactly what Tax::Formula exists to prevent. They still run
+        # as built-in rules mapped onto UK subtypes in Tax::Registry; they are
+        # simply not on the "write your own" menu.
+        "in_equity" => [
+          Rules::In::Equity,
+          "Indian listed equity: latent long-term gain taxed at 12.5% (the " \
+          "₹1.25 lakh annual exemption is applied once, not per account)."
+        ],
         COMPOSED => [
           Rules::Composed,
           "Write your own: choose what is taxed -- the whole balance, the gain, " \

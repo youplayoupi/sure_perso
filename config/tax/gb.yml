@@ -1,0 +1,50 @@
+# United Kingdom tax parameters, versioned by effective date.
+#
+# DATA only; nothing here is constantized.
+#
+# CGT has two rates, and which one applies depends on whether the gain, stacked
+# on income, falls in the basic or higher income-tax band. The module does not
+# know the household's income, but it does ask for one thing that answers the
+# question well enough: the household's marginal rate of income tax. A basic-
+# rate taxpayer (20%) pays 18% CGT; anyone above pays 24%. The rule reads that
+# single declared rate and picks the band, rather than running an income
+# schedule Sure cannot feed. See app/models/tax/rules/uk/capital_gains.rb.
+#
+# The £3,000 annual exempt amount is NOT modelled as a deduction: it applies
+# once across all of a household's disposals in a tax year, not per account,
+# and the report is per account. Each CGT figure states that it ignores the
+# allowance rather than quietly spreading it. See §"Allowances" in the country
+# guide for the portfolio-level netting this would need.
+
+country: GB
+currency: GBP
+
+# CGT on gains falling within the basic-rate income band.
+capital_gains_basic:
+  - effective_from: 2018-01-01
+    rate: 0.10
+  - effective_from: 2024-10-30
+    rate: 0.18
+    note: "Autumn Budget 2024 raised the lower CGT rate from 10% to 18%."
+
+# CGT on gains above the basic-rate band.
+capital_gains_higher:
+  - effective_from: 2018-01-01
+    rate: 0.20
+  - effective_from: 2024-10-30
+    rate: 0.24
+    note: "Autumn Budget 2024 raised the higher CGT rate from 20% to 24%."
+
+products:
+  isa:
+    label: "Individual Savings Account"
+    ceiling: 20000
+
+unmodelled:
+  - id: dividend_income
+    label: "Dividend and savings income"
+    reason: >-
+      Dividends and interest are taxed as they arise, under separate allowances
+      (the dividend allowance and the personal savings allowance), not on
+      liquidation. That is outside a report about what a portfolio is worth
+      after tax if sold today.

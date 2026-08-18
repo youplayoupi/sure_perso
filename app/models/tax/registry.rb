@@ -28,6 +28,9 @@ module Tax
     def self.built_in(country)
       case country.to_s.upcase
       when "FR" then french_rules
+      when "US" then us_rules
+      when "GB" then gb_rules
+      when "IN" then in_rules
       else {}
       end
     end
@@ -55,6 +58,121 @@ module Tax
         [ "Property", TYPE_WILDCARD ] => Rules::NotModelled.new(
           reason: Message.new("not_modelled.property")
         )
+      }
+    end
+
+    # United States. Taxable accounts take the long-term capital-gains rate on
+    # the gain; pre-tax retirement wrappers are taxed as income on the whole
+    # balance; Roth/HSA/529 are genuinely exempt on qualified use.
+    def self.us_rules
+      securities = Rules::Us::Securities.new
+      deferred   = Rules::Us::Deferred.new
+      deposit    = Rules::CashDeposit.new
+
+      {
+        [ "Investment", "brokerage" ]   => securities,
+        [ "Investment", "ugma" ]        => securities,
+        [ "Investment", "utma" ]        => securities,
+        [ "Investment", "mutual_fund" ] => securities,
+        [ "Investment", "trust" ]       => securities,
+        [ "Investment", "angel" ]       => securities,
+
+        [ "Investment", "401k" ]       => deferred,
+        [ "Investment", "403b" ]       => deferred,
+        [ "Investment", "457b" ]       => deferred,
+        [ "Investment", "tsp" ]        => deferred,
+        [ "Investment", "ira" ]        => deferred,
+        [ "Investment", "sep_ira" ]    => deferred,
+        [ "Investment", "simple_ira" ] => deferred,
+
+        [ "Investment", "roth_401k" ] => Rules::Exempt.new,
+        [ "Investment", "roth_ira" ]  => Rules::Exempt.new,
+        [ "Investment", "529_plan" ]  => Rules::Exempt.new,
+        [ "Investment", "hsa" ]       => Rules::Exempt.new,
+
+        [ "Depository", "checking" ]     => deposit,
+        [ "Depository", "savings" ]      => deposit,
+        [ "Depository", "cd" ]           => deposit,
+        [ "Depository", "money_market" ] => deposit,
+        [ "Depository", "hsa" ]          => Rules::Exempt.new,
+
+        [ "Crypto", TYPE_WILDCARD ] => securities
+      }
+    end
+
+    # United Kingdom. Taxable accounts take CGT at the band implied by the
+    # household's marginal rate; ISAs are exempt; pensions are a lump sum taxed
+    # as income on three-quarters of the balance.
+    def self.gb_rules
+      cgt     = Rules::Gb::CapitalGains.new
+      pension = Rules::Gb::Pension.new
+      deposit = Rules::CashDeposit.new
+
+      {
+        [ "Investment", "brokerage" ]   => cgt,
+        [ "Investment", "mutual_fund" ] => cgt,
+        [ "Investment", "trust" ]       => cgt,
+        [ "Investment", "angel" ]       => cgt,
+
+        [ "Investment", "isa" ]  => Rules::Exempt.new,
+        [ "Investment", "lisa" ] => Rules::Exempt.new,
+
+        [ "Investment", "sipp" ]                 => pension,
+        [ "Investment", "workplace_pension_uk" ] => pension,
+
+        [ "Depository", "checking" ]     => deposit,
+        [ "Depository", "savings" ]      => deposit,
+        [ "Depository", "cd" ]           => deposit,
+        [ "Depository", "money_market" ] => deposit,
+
+        [ "Crypto", TYPE_WILDCARD ] => cgt
+      }
+    end
+
+    # India. Listed-equity wrappers take the long-term equity rate on the gain;
+    # PPF and equivalents are exempt; debt, small savings, NPS and insurance
+    # turn on facts Sure does not hold and are named rather than valued.
+    def self.in_rules
+      equity  = Rules::In::Equity.new
+      deposit = Rules::CashDeposit.new
+
+      debt = Rules::NotModelled.new(
+        reason: "Indian debt funds, fixed deposits and small-savings schemes are taxed " \
+                "at slab rates on interest that accrues as it arises, over holding-period " \
+                "bands Sure does not record. Named rather than valued."
+      )
+      retirement = Rules::NotModelled.new(
+        reason: "NPS, APY and life insurance are taxed on the split between lump sum and " \
+                "annuity and on deduction history, none of which Sure holds."
+      )
+
+      {
+        [ "Investment", "indian_stocks" ] => equity,
+        [ "Investment", "indian_equity" ] => equity,
+        [ "Investment", "indian_etf" ]    => equity,
+        [ "Investment", "gold_etf" ]      => equity,
+        [ "Investment", "gold_mf" ]       => equity,
+        [ "Investment", "mutual_fund" ]   => equity,
+
+        [ "Investment", "ppf" ]           => Rules::Exempt.new,
+        [ "Investment", "ssy" ]           => Rules::Exempt.new,
+        [ "Investment", "tax_free_bond" ] => Rules::Exempt.new,
+
+        [ "Investment", "nps" ]            => retirement,
+        [ "Investment", "apy" ]            => retirement,
+        [ "Investment", "life_insurance" ] => retirement,
+
+        [ "Investment", "fd" ]             => debt,
+        [ "Investment", "rd" ]             => debt,
+        [ "Investment", "nsc" ]            => debt,
+        [ "Investment", "scss" ]           => debt,
+        [ "Investment", "corporate_bond" ] => debt,
+        [ "Investment", "g_sec" ]          => debt,
+
+        [ "Depository", "checking" ]     => deposit,
+        [ "Depository", "savings" ]      => deposit,
+        [ "Depository", "cd" ]           => deposit,
+        [ "Depository", "money_market" ] => deposit
       }
     end
 

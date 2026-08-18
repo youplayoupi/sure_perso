@@ -318,6 +318,63 @@ fr:
     # modèle rendrait alors un taux différent selon le rendu qui s'en est
     # chargé. Les pourcentages arrivent déjà formatés.
     messages:
+      # --- Règles de plus-values US / UK / IN -----------------------------
+      cash_deposit:
+        basis: "liquidités ; retirer le solde n'est pas en soi un fait imposable"
+        note: >-
+          Les intérêts d'un compte imposable sont imposés au fil de l'eau,
+          déjà payés et hors de ce rapport.
+      securities_gain:
+        basis: "%{rate} sur la plus-value de %{gain} au-dessus d'un prix de revient de %{cost}."
+        no_cost_basis: >-
+          Ce compte est imposé sur la plus-value au-dessus du coût des titres,
+          que Sure n'a pas enregistré.
+        latent_loss: >-
+          Ce compte présente une moins-value latente de %{loss} ; aucune
+          plus-value n'est imposée aujourd'hui.
+      us_long_term:
+        rate_assumed: >-
+          Le taux long terme de %{rate} est supposé. Les actifs détenus un an
+          ou moins sont imposés comme un revenu ordinaire ; Sure n'enregistre
+          pas les durées de détention.
+        bracket: >-
+          Le taux long terme américain est de 0, 15 ou 20 pour cent selon le
+          revenu ; la tranche médiane est supposée. Corrigez-le dans Impôts si
+          vous relevez d'une autre tranche.
+      us_niit:
+        note: >-
+          Les hauts revenus peuvent devoir un impôt supplémentaire sur les
+          revenus de placement d'environ 3,8 pour cent, non inclus ici.
+      deferred:
+        basis: "%{rate} sur la totalité du solde de %{amount}, imposé comme un revenu au retrait."
+        whole_balance_caveat: >-
+          C'est la totalité du solde qui est imposée ici, pas seulement la
+          plus-value : les versements ont été faits avant impôt.
+        lump_sum_caveat: >-
+          Un taux unique de %{rate} sur %{amount} est exact dans une seule
+          tranche et sous-estime un retrait assez important pour passer à la
+          tranche supérieure.
+      gb_capital_gains:
+        band_from_marginal: >-
+          La tranche de CGT de %{rate} a été déduite de votre taux marginal
+          d'imposition déclaré.
+        allowance_ignored: >-
+          Ceci ignore l'abattement annuel de 3 000 £, qui s'applique une seule
+          fois sur l'ensemble de vos cessions, et non par compte.
+      gb_pension:
+        basis: "Le premier quart est exonéré ; %{rate} sur les %{amount} restants."
+        note: >-
+          Un quart d'une pension britannique peut normalement être retiré en
+          franchise d'impôt ; le reste est imposé comme un revenu au retrait.
+      in_equity:
+        long_term_assumed: >-
+          Le taux long terme de %{rate} est supposé. Les actions détenues
+          12 mois ou moins sont imposées au taux court terme, plus élevé ;
+          Sure n'enregistre pas les durées de détention.
+        exemption_ignored: >-
+          Ceci ignore l'exonération annuelle de 1,25 lakh ₹ sur les plus-values
+          d'actions à long terme, qui s'applique une seule fois sur l'ensemble
+          des cessions, et non par compte.
       # --- Refus, tronc commun --------------------------------------------
       base:
         declare: Déclarez %{needs} sur ce compte pour qu'il soit calculé.

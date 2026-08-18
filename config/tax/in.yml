@@ -1,0 +1,54 @@
+# India tax parameters, versioned by effective date.
+#
+# DATA only; nothing here is constantized.
+#
+# The rates below are the listed-equity regime (Sections 112A and 111A): the
+# one corner of Indian capital-gains tax where Sure's own data -- a value and a
+# cost basis on a demat-style holding -- is enough to compute the bill. Debt
+# funds, small-savings schemes, NPS and life insurance each turn on facts Sure
+# does not hold (holding period bands, annuitised vs lump sum, deduction
+# history), so the registry maps them to NotModelled rather than to a rule that
+# would guess.
+#
+# The ₹1.25 lakh annual long-term exemption is NOT netted here: like the UK
+# allowance it applies once across all of a household's equity disposals in a
+# year, not per account, and the report is per account. The equity rule states
+# that it ignores the exemption rather than spreading it.
+
+country: IN
+currency: INR
+
+# Long-term capital gains on listed equity and equity mutual funds held over
+# 12 months (Section 112A). Rose to 12.5% (without indexation) on 2024-07-23.
+equity_ltcg:
+  - effective_from: 2018-04-01
+    rate: 0.10
+  - effective_from: 2024-07-23
+    rate: 0.125
+    note: "Budget 2024 raised the 112A rate from 10% to 12.5% and dropped indexation."
+
+# Short-term capital gains on the same assets held 12 months or less
+# (Section 111A). Rose to 20% on 2024-07-23.
+equity_stcg:
+  - effective_from: 2018-04-01
+    rate: 0.15
+  - effective_from: 2024-07-23
+    rate: 0.20
+    note: "Budget 2024 raised the 111A rate from 15% to 20%."
+
+products:
+  ppf:
+    label: "Public Provident Fund"
+
+unmodelled:
+  - id: debt_and_small_savings
+    label: "Debt funds, FDs and small-savings schemes"
+    reason: >-
+      Interest and debt gains are taxed at slab rates as they arise, and their
+      holding-period bands changed in 2023-24. Sure records neither the accrual
+      nor the band, so these are named rather than valued.
+  - id: nps_and_insurance
+    label: "NPS, APY and life insurance"
+    reason: >-
+      The taxable share depends on how much is taken as a lump sum versus
+      annuitised, and on deduction history, none of which Sure holds.

@@ -264,7 +264,49 @@ module Tax
 
       # --- Assumptions ----------
       "assumptions.marginal_rate_caveat" =>
-        "No household marginal rate has been set, so %{rate} is assumed for the part taxed as income. That is a guess, not your rate: set it under Taxes and this figure changes."
+        "No household marginal rate has been set, so %{rate} is assumed for the part taxed as income. That is a guess, not your rate: set it under Taxes and this figure changes.",
+
+      # --- US / UK / IN capital-gains rules (see app/models/tax/rules/{us,gb,in}) -
+      "cash_deposit.basis" =>
+        "cash; withdrawing the balance is not itself a taxable event",
+      "cash_deposit.note" =>
+        "Interest on a taxable account is taxed as it arises, which is already paid and outside this report.",
+
+      "securities_gain.basis" =>
+        "%{rate} on the gain of %{gain} over a cost basis of %{cost}.",
+      "securities_gain.no_cost_basis" =>
+        "This account is taxed on the gain over what the holdings cost, which Sure has not recorded.",
+      "securities_gain.latent_loss" =>
+        "This account shows a latent loss of %{loss}, so no gain is taxed today.",
+
+      "us_long_term.rate_assumed" =>
+        "The %{rate} long-term rate is assumed. Assets held a year or less are taxed as ordinary income; Sure does not record holding periods.",
+      "us_long_term.bracket" =>
+        "The US long-term rate is 0, 15 or 20 percent depending on income; the middle band is assumed. Correct it under Taxes if you sit in another band.",
+      "us_niit.note" =>
+        "High earners may owe an additional net investment income tax of about 3.8 percent, which is not included.",
+
+      "deferred.basis" =>
+        "%{rate} on the whole balance of %{amount}, taxed as income on withdrawal.",
+      "deferred.whole_balance_caveat" =>
+        "The whole balance is taxed here, not just the gain: the contributions went in pre-tax.",
+      "deferred.lump_sum_caveat" =>
+        "A single rate of %{rate} on %{amount} is exact within one tax band and understates a withdrawal large enough to climb into the next.",
+
+      "gb_capital_gains.band_from_marginal" =>
+        "The %{rate} CGT band was taken from your declared marginal income-tax rate.",
+      "gb_capital_gains.allowance_ignored" =>
+        "This ignores the £3,000 annual exempt amount, which applies once across all your disposals, not per account.",
+
+      "gb_pension.basis" =>
+        "The first quarter is tax-free; %{rate} on the remaining %{amount}.",
+      "gb_pension.note" =>
+        "A quarter of a UK pension can normally be taken tax-free; the rest is taxed as income on withdrawal.",
+
+      "in_equity.long_term_assumed" =>
+        "The %{rate} long-term rate is assumed. Equity held for 12 months or less is taxed at the higher short-term rate; Sure does not record holding periods.",
+      "in_equity.exemption_ignored" =>
+        "This ignores the ₹1.25 lakh annual long-term equity exemption, which applies once across all disposals, not per account."
     }.freeze
 
     # What a sentence asks of the reader. Three answers and no more, because a
@@ -412,7 +454,15 @@ module Tax
       "not_modelled.crypto" => :blocker,
       "not_modelled.property" => :blocker,
 
-      "assumptions.marginal_rate_caveat" => :gap
+      "assumptions.marginal_rate_caveat" => :gap,
+
+      "securities_gain.no_cost_basis" => :blocker,
+      "us_long_term.rate_assumed" => :gap,
+      "us_long_term.bracket" => :gap,
+      "deferred.lump_sum_caveat" => :gap,
+      "gb_capital_gains.allowance_ignored" => :gap,
+      "in_equity.long_term_assumed" => :gap,
+      "in_equity.exemption_ignored" => :gap
     }.freeze
 
     # Which fact a gap is about, where a form on the account itself can take
