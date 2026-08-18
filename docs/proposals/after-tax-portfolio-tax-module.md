@@ -161,7 +161,12 @@ jurisdiction = Tax::Registry.for(family.country)   # -> Tax::Jurisdiction, or fa
 liability    = jurisdiction.latent_tax(holding, profile: family.tax_profile)
 ```
 
-`Registry` loads every `config/tax/*.yml` once (memoized), maps ISO country code → `Jurisdiction`, and returns the generic fallback jurisdiction for anything unconfigured. Adding a country = **dropping a YAML file + a locale entry. No engine changes.**
+`Registry` resolves an ISO country code → `Jurisdiction` by merging **two sources into one internal representation** (`Tax::RuleSet`):
+
+1. **Built‑in configs** — every `config/tax/*.yml` shipped in the repo (loaded + memoized).
+2. **Custom configs** — rows in a `tax_jurisdictions` table (JSONB `config`), created by users through the settings screen (§6.2).
+
+Both are parsed into the *same* `RuleSet` value object and validated against the *same* contract (§6.3). A custom config for a country overrides/extends the built‑in one; anything unconfigured falls through to the generic fallback. **The calculators never know or care where a `RuleSet` came from** — that's what keeps "add via file" and "add via UI" the same code path. Adding a country therefore never touches the engine: it's a YAML file (+ locale entry) or a DB row.
 
 ### 5.3 Config schema (rates live in versioned data, not code)
 
@@ -281,39 +286,103 @@ Treatment shortcuts the maths:
 
 **Allowances are portfolio‑level, not per‑holding**, so the annual exempt amount (UK £3k, DE saver's allowance, India ₹1.25L) is applied once by `BalanceSheet#after_tax_net_worth` against total taxable gains — not multiplied across every lot. This is why the calculator returns a *taxable_gain breakdown*, and the BalanceSheet does the final allowance netting.
 
-### 5.5 UI
+### 5.5 UI — dedicated pages (not woven into existing screens)
 
-- New **"After tax"** toggle/tab on the net‑worth / balance‑sheet page (Hotwire, query‑param state per Convention 3).
-- Per‑account: show pre‑tax balance, estimated latent tax, after‑tax value, and a wrapper badge (Exempt / Deferred / Taxable) reusing the existing `tax_treatment`.
-- Settings → a **Tax profile** form (country prefilled from `families.country`, filing status, optional income, status flags relevant to the country).
+To keep blast radius small (§7), the feature lives on **its own pages**, not as edits to the existing net‑worth dashboard:
+
+- **`/tax` (After‑tax overview)** — its own controller/route: after‑tax net worth, per‑account table (pre‑tax balance, estimated latent tax, after‑tax value, wrapper badge Exempt/Deferred/Taxable), and the breakdown. This is a *new read‑only page* that calls into the existing `BalanceSheet`, so the current dashboard is untouched.
+- **`/settings/tax_profile`** — a **Tax profile** form following the existing `namespace :settings` pattern (country prefilled from `families.country`, filing status, optional income, subregion, country‑relevant status flags).
+- **`/settings/tax_jurisdictions`** — the **custom‑country editor** (§6.2), same settings pattern.
 - Prominent "estimate, not advice" disclaimer; graceful "not yet configured for <country> — showing pre‑tax" state.
+- Optional, later: a small "view after tax →" link from the net‑worth page (a one‑line additive change) once the feature leaves preview.
 
 ---
 
-## 6. Fitting *all* countries
+## 6. Extensibility: adding a country (file **and/or** settings screen)
 
-Two mechanisms make the claim "fits all countries" true without configuring all ~200:
+This is the core requirement: adding a country must be easy and must **not** require touching the calculation engine. Three complementary mechanisms:
 
-1. **`config/tax/_fallback.yml`** — a generic jurisdiction with a single, user‑editable **flat effective CGT rate** (default e.g. 15%, or 0 to disable). Any `family.country` with no dedicated file resolves here, so the after‑tax page always renders *something* sensible, and the user can override the rate in their tax profile.
-2. **Config‑only country onboarding** — because rules are declarative YAML + a locale string, a new country is a data PR reviewed by someone who knows that tax system, never a change to the calculation engine. This is how the project already scales `Investment::SUBTYPES` by region.
+### 6.1 Via config file (primary path, for complex jurisdictions)
+
+Because rules are declarative YAML validated against a contract (§6.3), a new country is a **data PR** reviewed by someone who knows that tax system — never an engine change. This is how the project already scales `Investment::SUBTYPES` by region. Best for jurisdictions needing multiple methods, brackets, or a custom `strategy` (France electable, Netherlands deemed‑return).
+
+### 6.2 Via settings screen (for self‑hosters and simple jurisdictions)
+
+A `tax_jurisdictions` table + `/settings/tax_jurisdictions` CRUD lets a user add or override a country **without a deploy** — important for self‑hosted instances. The UI is deliberately scoped to what a form can safely express:
+
+- **Duplicate‑from‑template:** start from any built‑in `RuleSet` (or the fallback) and tweak it.
+- **Simple knobs, fully UI‑editable:** headline effective CGT rate, one annual allowance, per‑`tax_treatment` wrapper overrides (exempt/deferred/taxable rate), currency, dividend/interest rate. These cover the `flat_rate` and single‑method `realized_gain` strategies — enough for most countries.
+- **Advanced (multi‑method / brackets):** shown read‑only if inherited from a built‑in file; editable only as raw config for power users (a validated JSON/YAML textarea), so the UI never has to render a full bracket editor. Complex jurisdictions stay in files.
+
+Because §5.2 funnels both sources through one `RuleSet` + one validator, the settings screen is "just another loader" — no parallel calculation path.
+
+### 6.3 Robust core: one contract, validated on load
+
+What makes the core safe to extend by non‑experts:
+
+- **A single schema contract** (`config/tax/schema.json` or a `Tax::RuleSet::CONTRACT` PORO) that *every* config — file or DB — is validated against before use. Invalid config is rejected, logged via `DebugLogEntry.capture`, and the jurisdiction falls back rather than producing garbage.
+- **A CI guard** (rake task / test) validates all shipped `config/tax/*.yml` against the contract, so a malformed country PR fails CI, not production.
+- **A stable calculator interface** — every strategy implements `call(gain:, treatment:, wrapper_balance:, profile:, year:) -> Tax::Liability`. New strategies are added rarely; new *countries* just pick an existing `strategy:` and supply data.
+- **Versioned `tax_years`** so rate updates are additive and auditable, and historical charts can use period‑correct rates later.
+
+### 6.4 Fitting *all* countries from day one
+
+- **`config/tax/_fallback.yml`** — a generic jurisdiction with a single, user‑editable **flat effective CGT rate** (default e.g. 15%, or 0 to disable). Any `family.country` with no dedicated config resolves here, so the after‑tax page always renders something sensible, overridable in the tax profile or via a custom jurisdiction (§6.2).
 
 ---
 
-## 7. Phased rollout
+## 7. Minimal footprint & review isolation
 
-1. **Phase 0 — plumbing:** `Tax::Profile` model + migration, `Tax::Registry`/`Jurisdiction`/`RuleSet` POROs, `_fallback.yml`, `flat_rate` calculator. Wire `Account#latent_tax` and `BalanceSheet#after_tax_net_worth`. Ship the page with fallback‑only rates behind `preview_features_enabled?`.
-2. **Phase 1 — Tier‑1 configs:** `us/uk/de/fr/ca.yml` + `realized_gain` calculator (flat, marginal_bands, inclusion, discount kinds). Tax‑profile settings form. Wrapper badges.
+The feature is designed to land as an **almost purely additive** diff so reviewers can reason about it in isolation and it can be dark‑launched.
+
+### 7.1 Everything new lives under a `Tax::` namespace
+
+New files only: `app/models/tax/**`, `app/controllers/tax_controller.rb` + `app/controllers/settings/tax_profiles_controller.rb` + `settings/tax_jurisdictions_controller.rb`, `app/views/tax/**` + `settings/tax_*`, `config/tax/**`, `db/migrate/*_create_tax_*`, locale entries, and tests. None of this is reachable until routed and gated.
+
+### 7.2 The complete list of edits to *existing* files (keep it short)
+
+| Existing file | Change | Why it's minimal |
+|---|---|---|
+| `config/routes.rb` | add `get "tax"` + two `settings` resources | additive lines |
+| `app/models/family.rb` | `include Tax::FamilyExtension` (one line) | associations/methods live in the concern, not inline — the class body barely changes |
+| `app/models/account.rb` | `include Tax::Accountable` (one line) | `#latent_tax` / `#after_tax_value` implemented in the concern |
+| `app/models/balance_sheet.rb` | add `#after_tax_net_worth` (delegates to a `Tax::` PORO) | one method; core net‑worth logic untouched |
+| settings nav partial | one nav item, gated | additive |
+
+Everything else is a new file. If reviewers want **zero** edits to `account.rb`/`family.rb`, the alternative is a decorator PORO (`Tax::AccountValuation.new(account)`) so no core model changes at all — at the cost of the "models answer questions about themselves" convention. Recommendation: the one‑line concerns (idiomatic), but the PORO option is there if isolation must be absolute.
+
+### 7.3 Feature‑gated and dark‑launchable
+
+Route/nav/pages are gated behind the existing **`preview_features_enabled?`** (`app/controllers/concerns/preview_gateable.rb`). The whole feature ships dark, is invisible to normal users, and can be reviewed/merged in phases without affecting anyone until enabled.
+
+### 7.4 No new runtime dependencies
+
+Pure Rails + `Money` (already present). YAML/JSON parsing and JSON‑schema validation use the stdlib / an existing dev gem. Consistent with Convention 1 (minimize dependencies).
+
+### 7.5 Engine option (only if a hard boundary is wanted)
+
+The module *could* be a mountable Rails engine for a compile‑time boundary, but that's heavier and less idiomatic for this monolith. Recommendation: a namespaced in‑app module (above); revisit an engine only if the `Tax::` surface grows large.
+
+---
+
+## 8. Phased rollout
+
+1. **Phase 0 — robust core, no country knowledge:** `Tax::Profile` + `tax_jurisdictions` migrations; `Registry`/`Jurisdiction`/`RuleSet` POROs + schema contract + validator + CI guard; `_fallback.yml`; `flat_rate` calculator. One‑line concerns on `Family`/`Account`, `BalanceSheet#after_tax_net_worth`. New `/tax` page + `/settings/tax_profile`, all behind `preview_features_enabled?`. *Ships working with fallback rates only — this is the reviewable foundation.*
+2. **Phase 1 — Tier‑1 configs + custom‑country UI:** `us/uk/de/fr/ca.yml` + `realized_gain`/`electable_gain` calculators (flat, marginal_bands, inclusion, discount, electable). `/settings/tax_jurisdictions` CRUD. Wrapper badges.
 3. **Phase 2 — Tier‑2 + strategies:** `au/in/nl/it/es.yml`; add `deemed_return` calculator for NL. Household + status‑flag modifiers.
-4. **Phase 3 — polish:** period‑correct historical rates, subregion (province/state/canton) support, per‑user profiles for shared families, CSV/API exposure of after‑tax figures.
+4. **Phase 3 — polish:** period‑correct historical rates, subregion (province/state/canton) support, per‑user profiles for shared families, CSV/API exposure of after‑tax figures, optional link from the net‑worth page.
 
-## 8. Testing & correctness
+Each phase is an independently reviewable, mergeable PR; Phase 0 is safe to merge on its own because it changes nothing users can see until the preview flag is on.
+
+## 9. Testing & correctness
 
 - Minitest + fixtures per `CLAUDE.md`. Table‑driven tests: for each jurisdiction, a fixture holding with a known gain + profile → asserted latent tax (golden numbers from the reference tables in §3.1).
 - Test each **strategy** once thoroughly (flat, marginal_bands, inclusion, discount, deemed_return, flat_rate); test each **country file** only for its distinctive rule (DE church tax, UK allowance netting, CA province, IN senior exemption).
 - Property test: `tax_exempt` wrapper ⇒ latent tax always 0; after‑tax value ≤ pre‑tax value for asset accounts.
+- **Config‑contract test** validating every shipped `config/tax/*.yml` (the CI guard from §6.3), so community country PRs fail fast on malformed data.
 - No external API dependency, so no VCR needed.
 
-## 9. Open questions
+## 10. Open questions
 
 - Should latent tax on **tax‑deferred** balances be shown by default, or opt‑in? (It can dwarf CGT and surprise users.)
 - Do we net **capital losses** across accounts before applying gains? (Recommended: yes, at BalanceSheet level, mirroring real loss‑harvesting.)
