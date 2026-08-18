@@ -67,6 +67,20 @@ The user's brief explicitly calls out *person, household, per‑product, veteran
 3. **Household / filing status** — single, married filing jointly/separately, civil partnership, head of household. Changes both the rate bands and the size of allowances (e.g. Germany's Sparerpauschbetrag €1,000 single / €2,000 joint; US 0% LTCG bracket doubles for MFJ).
 4. **Personal status modifiers** — senior/super‑senior, disability, veteran, church membership, tax residency/domicile. These flip specific exemptions on and off.
 
+#### How much do "veteran / handicapped / senior" actually matter here?
+
+For this feature specifically — estimating **latent tax on unrealized capital gains** — most personal‑status flags do **not** move the number, and should be treated as *optional, opt‑in* config rather than core logic:
+
+| Status | Affects the CGT estimate? | Reality |
+|---|---|---|
+| **Veteran** | ❌ Essentially never | Benefits (e.g. US VA disability pay) are tax‑exempt *income*; some US states give veterans *property‑tax* relief (a recurring cost on a Property account, not a latent sale tax). No general capital‑gains break. |
+| **Disabled / handicapped** | ⚠️ Only indirectly | Disability‑gated *accounts* (Canada RDSP, etc.) are already captured by the subtype → `tax_treatment`, so the wrapper handles it — no person‑level flag needed for valuation. Other reliefs (India 80U/80DD…) are income‑side. |
+| **Senior / super‑senior** | ⚠️ Mostly no | Higher basic exemptions are income‑side; equity LTCG keeps its own exemption regardless of age (e.g. India ₹1.25L). Senior products (SCSS) are subtypes, not flags. |
+
+The modifiers that **genuinely change the capital‑gains estimate** and are worth building are: **filing/household status** (allowance size + brackets), **taxable income** (band selection for marginal‑rate countries), **church membership** (Germany, +8–9% on the tax itself), and **subregion** (province/state/canton rate).
+
+**Decision:** do not build veteran/handicapped tax logic in the MVP. Keep `status_flags` (§5.1) an open JSONB so a country's YAML can *opt in* to reading a flag (as `de.yml` reads `church_member`); community PRs add per‑jurisdiction nuances later. Guardrails: (a) where a status gates a *product*, the subtype/`tax_treatment` already covers it — no duplicate person‑flag logic; (b) modeling full personal‑status tax breaks pushes the app toward tax‑prep, which conflicts with the "estimate, not advice" framing.
+
 ### 3.1 Per‑country reference (Tier 1 + 2), tax year 2025/26
 
 Values are illustrative defaults to seed the config; they change yearly, so they live in versioned config, never in code (§5.3).
