@@ -210,6 +210,50 @@ Design choices baked into the schema:
 - **`wrappers`** keyed by the *existing* `tax_treatment` enum means the wrapper→treatment mapping we already maintain in `Investment::SUBTYPES` is the single source of truth; the country file only says what each treatment *costs*.
 - **`when_flag` / conditional allowances** express veteran/disability/senior/church modifiers declaratively.
 
+#### 5.3.1 CGT that depends on household income, and electable methods (France)
+
+Two related realities the schema must handle:
+
+**(a) The rate depends on household income.** In the US (LTCG 0/15/20 bracket), UK (18 vs 24 band), Canada/Australia (gain stacked on marginal income) and India (slab for non‑112A assets), the tax on a gain depends on total household income. This is why `Tax::Profile.taxable_income_cents` exists and why marginal calculators **stack the gain on top of household income** to find the marginal rate. For household‑tax‑unit countries (France *foyer fiscal*, US *married filing jointly*) `taxable_income_cents` is the **household** figure, not an individual's.
+
+**(b) The taxpayer can elect between methods (France PFU vs barème).** For most French capital income the household may choose, on the annual return (case *2OP*), between the flat **PFU (30%)** and the progressive **barème** (household income‑tax scale + 17.2% social levies, with a 40% dividend abatement, pre‑2018 holding‑period abatements, and 6.8% CSG deductible). The choice is **global for the year and for all capital income** — not per product — so it is a household setting applied **once at the BalanceSheet level**, exactly where annual allowances are netted (§5.4). Some products are outside the choice entirely (PEA >5 yrs, Livret A → already `tax_exempt`; assurance‑vie has its own regime).
+
+The schema expresses this with `methods` + an `election` mode and a reusable progressive `income_tax_scale`:
+
+```yaml
+# config/tax/fr.yml (illustrative — seed values, updated per tax year)
+country: FR
+currency: EUR
+strategy: electable_gain            # compute each method, elect per `election`
+tax_years:
+  "2025":
+    capital_gains:
+      election: most_favorable      # most_favorable | pfu | bareme  (household preference)
+      methods:
+        pfu:
+          kind: flat
+          rate: 0.128               # income-tax portion
+          social_levies: 0.172      # always applies
+        bareme:
+          kind: marginal_scale
+          scale: income_tax_scale   # references the household brackets below
+          social_levies: 0.172
+          csg_deductible: 0.068     # barème only
+          abatements:
+            dividends: 0.40                       # 40% abattement (barème only)
+            securities_pre_2018: { by_holding_period: true }
+    income_tax_scale:               # progressive household (foyer fiscal) IR brackets
+      - { up_to: 11497,  rate: 0.0  }
+      - { up_to: 29315,  rate: 0.11 }
+      - { up_to: 83823,  rate: 0.30 }
+      - { up_to: 180294, rate: 0.41 }
+      - { rate: 0.45 }
+    wrappers:
+      tax_exempt: { latent_tax_rate: 0.0 }        # PEA >5y, Livret A
+```
+
+`Tax::Calculators::ElectableGain` computes each method and returns the one selected by `election` (default: the smaller tax). Because the election and the progressive scale need the **whole** household picture, the *final* election is resolved at `BalanceSheet#after_tax_net_worth` (which already aggregates all gains and applies allowances once); per‑holding numbers shown in the UI are the marginal‑attributed share of that household‑level result, and the "estimate, not advice" disclaimer covers the simplification. The `income_tax_scale` block is reusable — marginal‑rate countries (US/UK/CA/AU/IN) reference the same structure instead of duplicating bracket logic.
+
 ### 5.4 Calculation flow (per holding → account → portfolio)
 
 ```
