@@ -11,6 +11,9 @@
   <%= render DS::Alert.new(variant: :info) do %>
     <p class="font-medium"><%= t(".unsupported_title", country: @country) %></p>
     <p class="text-sm text-secondary mt-1"><%= t(".unsupported_body") %></p>
+    <p class="mt-2">
+      <%= link_to t("tax_countries.index.title"), tax_countries_path, class: "text-link hover:underline text-sm" %>
+    </p>
   <% end %>
 <% else %>
 

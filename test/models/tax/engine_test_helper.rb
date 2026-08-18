@@ -59,6 +59,7 @@ module TaxEngineTestHelper
     tax/rules/in/equity
     tax/catalogue
     tax/registry
+    tax/country_guide
     tax/snapshot
     tax/projection
   ].freeze

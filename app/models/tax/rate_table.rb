@@ -147,6 +147,12 @@ module Tax
       Array(@data["unmodelled"]).select { |u| Array(u["applies_to"]).include?(name.to_s) }
     end
 
+    # The whole `unmodelled:` list, for the country page that enumerates what a
+    # country taxes that this module deliberately does not.
+    def unmodelled
+      Array(@data["unmodelled"])
+    end
+
     private
       def products
         @data["products"] || {}

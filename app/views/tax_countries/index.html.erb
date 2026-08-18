@@ -1,0 +1,56 @@
+<% content_for :page_header do %>
+  <header class="space-y-1 mb-6">
+    <h1 class="text-xl lg:text-3xl font-medium text-primary"><%= t(".title") %></h1>
+    <p class="text-sm lg:text-base text-secondary"><%= t(".subtitle") %></p>
+  </header>
+<% end %>
+
+<div class="@container space-y-8">
+  <%# ---- How it works, in general ------------------------------------- %>
+  <section class="space-y-4">
+    <h2 class="text-lg font-medium text-primary"><%= t(".mechanism_title") %></h2>
+    <p class="text-sm text-secondary max-w-2xl"><%= t(".mechanism_intro") %></p>
+
+    <div class="grid grid-cols-1 @md:grid-cols-2 gap-4">
+      <% %w[data_vs_code unknown_not_zero own_subtypes one_rate].each do |key| %>
+        <div class="rounded-xl border border-primary bg-container p-4 space-y-1">
+          <div class="flex items-center gap-2">
+            <%= icon(t(".principles.#{key}.icon")) %>
+            <h3 class="text-sm font-medium text-primary"><%= t(".principles.#{key}.title") %></h3>
+          </div>
+          <p class="text-sm text-secondary"><%= t(".principles.#{key}.body") %></p>
+        </div>
+      <% end %>
+    </div>
+  </section>
+
+  <%# ---- Supported countries ------------------------------------------ %>
+  <section class="space-y-4">
+    <h2 class="text-lg font-medium text-primary"><%= t(".supported_title") %></h2>
+
+    <% if @family_country.present? && !@countries.include?(@family_country) %>
+      <%= render DS::Alert.new(variant: :info) do %>
+        <p class="text-sm">
+          <%= t(".your_country_unsupported", country: tax_country_name(@family_country)) %>
+        </p>
+      <% end %>
+    <% end %>
+
+    <div class="grid grid-cols-1 @sm:grid-cols-2 @lg:grid-cols-3 gap-3">
+      <% @countries.each do |code| %>
+        <%= link_to tax_country_path(code),
+              class: "group flex items-center justify-between rounded-xl border border-primary bg-container p-4 hover:bg-surface-hover transition-colors" do %>
+          <span class="text-sm font-medium text-primary"><%= tax_country_name(code) %></span>
+          <span class="flex items-center gap-1 text-xs text-secondary">
+            <% if code == @family_country %>
+              <span class="px-1.5 py-0.5 rounded-full bg-surface text-secondary"><%= t(".yours") %></span>
+            <% end %>
+            <%= icon("arrow-right", size: "sm") %>
+          </span>
+        <% end %>
+      <% end %>
+    </div>
+  </section>
+
+  <p class="text-xs text-subdued max-w-2xl"><%= t(".disclaimer") %></p>
+</div>

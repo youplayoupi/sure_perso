@@ -1,0 +1,157 @@
+<% content_for :page_header do %>
+  <header class="space-y-1 mb-6">
+    <div class="flex items-center gap-3">
+      <h1 class="text-xl lg:text-3xl font-medium text-primary"><%= tax_country_name(@country) %></h1>
+      <span class="px-2 py-0.5 rounded-full bg-surface text-xs text-secondary"><%= @guide.currency %></span>
+    </div>
+    <p class="text-sm lg:text-base text-secondary">
+      <%= t(".subtitle", date: format_date(@on, :long)) %>
+    </p>
+    <%= link_to t(".back"), tax_countries_path, class: "text-sm text-link hover:underline" %>
+  </header>
+<% end %>
+
+<div class="@container space-y-8">
+  <%# ---- Tally --------------------------------------------------------- %>
+  <% counts = @guide.counts %>
+  <section class="grid grid-cols-2 @md:grid-cols-4 gap-3">
+    <% %i[taxed not_modelled exempt cash].each do |c| %>
+      <div class="rounded-xl border border-primary bg-container p-4">
+        <p class="text-2xl font-medium text-primary"><%= counts[c].to_i %></p>
+        <p class="text-xs text-secondary"><%= t("tax_countries.classifications.#{c}.label") %></p>
+      </div>
+    <% end %>
+  </section>
+
+  <%# ---- Coverage: what happens to each wrapper ------------------------ %>
+  <section class="space-y-6">
+    <h2 class="text-lg font-medium text-primary"><%= t(".coverage_title") %></h2>
+
+    <% groups_by_class = @guide.coverage_groups.group_by(&:classification) %>
+    <% %i[taxed not_modelled exempt cash uncovered].each do |classification| %>
+      <% groups = groups_by_class[classification] %>
+      <% next if groups.blank? %>
+
+      <div class="space-y-3">
+        <div class="space-y-0.5">
+          <h3 class="text-sm font-medium text-primary"><%= t("tax_countries.classifications.#{classification}.label") %></h3>
+          <p class="text-xs text-secondary"><%= t("tax_countries.classifications.#{classification}.description") %></p>
+        </div>
+
+        <div class="rounded-xl border border-primary divide-y divide-primary overflow-hidden">
+          <% groups.each do |group| %>
+            <div class="p-4 space-y-2">
+              <p class="text-sm font-medium text-primary"><%= group.label %></p>
+
+              <div class="flex flex-wrap gap-1.5">
+                <% group.pairs.each do |(type, subtype)| %>
+                  <span class="px-2 py-0.5 rounded-full bg-surface text-xs text-secondary">
+                    <%= tax_country_subtype_label(type, subtype) %>
+                  </span>
+                <% end %>
+              </div>
+
+              <% if group.reason.present? %>
+                <p class="text-xs text-secondary"><%= tax_message(group.reason) %></p>
+              <% end %>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
+  </section>
+
+  <%# ---- Rates --------------------------------------------------------- %>
+  <section class="space-y-3">
+    <h2 class="text-lg font-medium text-primary"><%= t(".rates_title") %></h2>
+    <p class="text-xs text-secondary max-w-2xl"><%= t(".rates_intro") %></p>
+
+    <div class="overflow-x-auto rounded-xl border border-primary">
+      <table class="w-full text-sm">
+        <thead class="bg-surface text-secondary text-xs">
+          <tr>
+            <th class="text-left font-medium px-4 py-2"><%= t(".rate_name") %></th>
+            <th class="text-right font-medium px-4 py-2"><%= t(".rate_current") %></th>
+            <th class="text-left font-medium px-4 py-2"><%= t(".rate_schedule") %></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-primary">
+          <% @guide.rate_sections(on: @on).each do |section| %>
+            <tr>
+              <td class="px-4 py-2 text-primary"><%= t("tax.rates.#{section.name}", default: section.name.humanize) %></td>
+              <td class="px-4 py-2 text-right font-medium text-primary tabular-nums"><%= tax_country_rate(section.current_rate) %></td>
+              <td class="px-4 py-2 text-xs text-secondary">
+                <% section.entries.each do |e| %>
+                  <div>
+                    <span class="tabular-nums"><%= tax_country_rate(e[:rate]) %></span>
+                    <span class="text-subdued"><%= t(".from", date: format_date(e[:effective_from], :long)) %></span>
+                    <% if e[:note].present? %><span class="block text-subdued"><%= e[:note] %></span><% end %>
+                  </div>
+                <% end %>
+              </td>
+            </tr>
+          <% end %>
+          <% @guide.composites(on: @on).each do |composite| %>
+            <tr class="bg-surface/40">
+              <td class="px-4 py-2 text-primary">
+                <%= t("tax.rates.#{composite.name}", default: composite.name.humanize) %>
+                <span class="text-xs text-subdued">(<%= composite.parts.join(" + ") %>)</span>
+              </td>
+              <td class="px-4 py-2 text-right font-medium text-primary tabular-nums"><%= tax_country_rate(composite.current_rate) %></td>
+              <td class="px-4 py-2 text-xs text-secondary"><%= t(".composite_note") %></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <%# ---- Product ceilings ---------------------------------------------- %>
+  <% if @guide.products.any? %>
+    <section class="space-y-3">
+      <h2 class="text-lg font-medium text-primary"><%= t(".products_title") %></h2>
+      <div class="rounded-xl border border-primary divide-y divide-primary">
+        <% @guide.products.each do |product| %>
+          <div class="p-4 flex items-center justify-between">
+            <span class="text-sm text-primary"><%= product.label %></span>
+            <span class="text-xs text-secondary">
+              <% if product.ceiling %><%= t(".ceiling", amount: "#{product.ceiling.to_i} #{@guide.currency}") %><% end %>
+              <% if product.maturity_years %><%= t(".maturity", years: product.maturity_years) %><% end %>
+            </span>
+          </div>
+        <% end %>
+      </div>
+    </section>
+  <% end %>
+
+  <%# ---- Not modelled at all (named, not valued) ----------------------- %>
+  <% if @guide.unmodelled.any? %>
+    <section class="space-y-3">
+      <h2 class="text-lg font-medium text-primary"><%= t(".unmodelled_title") %></h2>
+      <p class="text-xs text-secondary max-w-2xl"><%= t(".unmodelled_intro") %></p>
+      <div class="rounded-xl border border-primary divide-y divide-primary">
+        <% @guide.unmodelled.each do |item| %>
+          <div class="p-4 space-y-1">
+            <p class="text-sm font-medium text-primary"><%= item["label"] %></p>
+            <p class="text-xs text-secondary"><%= item["reason"] %></p>
+          </div>
+        <% end %>
+      </div>
+    </section>
+  <% end %>
+
+  <%# ---- Assumptions & limits ------------------------------------------ %>
+  <section class="space-y-2">
+    <h2 class="text-lg font-medium text-primary"><%= t(".limits_title") %></h2>
+    <ul class="list-disc pl-5 space-y-1 text-sm text-secondary max-w-2xl">
+      <li><%= t(".limits.marginal_rate") %></li>
+      <li><%= t(".limits.holding_period") %></li>
+      <li><%= t(".limits.allowances") %></li>
+      <li><%= t(".limits.one_currency") %></li>
+    </ul>
+  </section>
+
+  <%= render DS::Alert.new(variant: :warning) do %>
+    <p class="text-sm"><%= t(".not_advice") %></p>
+  <% end %>
+</div>

@@ -1,0 +1,108 @@
+en:
+  tax_countries:
+    all_of_type: "All %{type}"
+    rate_unknown: "—"
+    index:
+      title: "Tax countries"
+      subtitle: "How Sure estimates after-tax value in each country it supports."
+      mechanism_title: "How it works"
+      mechanism_intro: >-
+        The after-tax report reads what Sure already knows about your accounts,
+        adds the few facts it cannot know, and applies one country's rules. The
+        same four ideas hold everywhere.
+      principles:
+        data_vs_code:
+          icon: "database"
+          title: "Rates are data, rules are code"
+          body: >-
+            Each country's rates live in an effective-dated file you can
+            correct; the logic that decides what is taxed is code. Editing a
+            rate changes a number and never runs anything.
+        unknown_not_zero:
+          icon: "shield-check"
+          title: "Unknown is never zero"
+          body: >-
+            A wrapper with no rule reports no tax and is left out of the total,
+            which is then marked incomplete. Returning zero for "we don't know"
+            is the one thing a tax tool must not do.
+        own_subtypes:
+          icon: "tags"
+          title: "Keyed on your account types"
+          body: >-
+            Rules attach to Sure's own account types, so a new type shows up as
+            an explicit gap rather than being quietly misfiled into a rule meant
+            for something else.
+        one_rate:
+          icon: "percent"
+          title: "One marginal rate, stated"
+          body: >-
+            Where tax depends on income, the module asks for a single marginal
+            rate you set once — not a bracket schedule it would have to run
+            against income Sure does not have.
+      supported_title: "Supported countries"
+      your_country_unsupported: >-
+        Your country (%{country}) isn't modelled yet, but the mechanism above
+        still applies — you can build your own rules under Settings → Taxes.
+      yours: "Yours"
+      disclaimer: >-
+        These pages describe the built-in rules. Figures on your report are
+        estimates, not tax advice.
+    show:
+      subtitle: "What Sure does with accounts here, as of %{date}."
+      back: "← All countries"
+      unsupported: "%{country} is not a supported tax country yet."
+      coverage_title: "What happens to each account type"
+      rates_title: "Rates"
+      rates_intro: >-
+        Every rate is effective-dated; the report uses the one in force on the
+        valuation date. A household can correct any of these under
+        Settings → Taxes.
+      rate_name: "Rate"
+      rate_current: "Current"
+      rate_schedule: "Schedule"
+      from: "from %{date}"
+      composite_note: "Sum of its parts, so a correction to any part flows through."
+      products_title: "Product limits"
+      ceiling: "Ceiling %{amount}"
+      maturity: "%{years}-year clock"
+      unmodelled_title: "Named but not valued"
+      unmodelled_intro: >-
+        Things this country taxes that Sure deliberately does not compute,
+        because they turn on facts it does not hold. They are named so an
+        incomplete total says what is missing.
+      limits_title: "Assumptions & limits"
+      limits:
+        marginal_rate: >-
+          One marginal income-tax rate, set once under Taxes. A withdrawal large
+          enough to cross a band is understated, and the report says so.
+        holding_period: >-
+          Sure does not record per-lot holding periods, so long-term treatment
+          is assumed where a country distinguishes it, and stated.
+        allowances: >-
+          Annual allowances that apply once across all disposals (not per
+          account) are not netted; each figure states that it ignores them.
+        one_currency: >-
+          Each country's report is drawn in its own currency and refuses rather
+          than guesses when it has no exchange rate.
+      not_advice: >-
+        These figures are estimates to help you plan. They are not tax advice.
+    classifications:
+      taxed:
+        label: "Taxed on liquidation"
+        description: "A latent tax is estimated if these were sold or withdrawn today."
+      not_modelled:
+        label: "Named, not valued"
+        description: >-
+          In scope but not computed: the tax turns on facts Sure does not hold.
+          Excluded from the total.
+      exempt:
+        label: "Exempt"
+        description: "Genuinely untaxed on qualified use. Reports zero, and means it."
+      cash:
+        label: "Cash"
+        description: >-
+          Withdrawing your own balance is not a taxable event; interest is taxed
+          as it arises, outside this report.
+      uncovered:
+        label: "Not yet covered"
+        description: "No rule maps these yet, so they are reported without a tax."

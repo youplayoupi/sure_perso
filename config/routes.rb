@@ -427,6 +427,11 @@ Rails.application.routes.draw do
     end
   end
 
+  # The "Tax countries" reference: the general mechanism (index) and a subpage
+  # per country enumerating what is handled locally. Read-only, computed from
+  # the engine, and available regardless of the family's own country.
+  resources :tax_countries, only: %i[index show]
+
   resources :budgets, only: %i[index show edit update], param: :month_year do
     post :copy_previous, on: :member
     get :picker, on: :collection

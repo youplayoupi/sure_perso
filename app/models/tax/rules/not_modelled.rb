@@ -14,6 +14,10 @@ module Tax
       rule_id "not_modelled"
       label "Deliberately not modelled"
 
+      # Read so Tax::CountryGuide can show *why* a wrapper is not modelled on
+      # the country page, alongside where it is stated on a report.
+      attr_reader :reason
+
       def initialize(reason:)
         @reason = reason
       end

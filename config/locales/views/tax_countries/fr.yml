@@ -1,0 +1,112 @@
+fr:
+  tax_countries:
+    all_of_type: "Tous les comptes %{type}"
+    rate_unknown: "—"
+    index:
+      title: "Fiscalité par pays"
+      subtitle: "Comment Sure estime la valeur après impôt dans chaque pays pris en charge."
+      mechanism_title: "Comment ça marche"
+      mechanism_intro: >-
+        Le rapport après impôt lit ce que Sure sait déjà de vos comptes, ajoute
+        les quelques faits qu'il ne peut pas connaître, et applique les règles
+        d'un pays. Les mêmes quatre idées valent partout.
+      principles:
+        data_vs_code:
+          icon: "database"
+          title: "Les taux sont des données, les règles du code"
+          body: >-
+            Les taux de chaque pays vivent dans un fichier daté que vous pouvez
+            corriger ; la logique de ce qui est imposé est du code. Modifier un
+            taux change un nombre et n'exécute jamais rien.
+        unknown_not_zero:
+          icon: "shield-check"
+          title: "Inconnu n'est jamais zéro"
+          body: >-
+            Un produit sans règle n'affiche aucun impôt et sort du total, qui
+            est alors marqué incomplet. Renvoyer zéro pour « on ne sait pas » est
+            la seule chose qu'un outil fiscal ne doit pas faire.
+        own_subtypes:
+          icon: "tags"
+          title: "Indexé sur vos types de comptes"
+          body: >-
+            Les règles s'attachent aux types de comptes de Sure ; un nouveau
+            type apparaît donc comme une lacune explicite plutôt que d'être
+            rangé à tort dans une règle prévue pour autre chose.
+        one_rate:
+          icon: "percent"
+          title: "Un taux marginal, déclaré"
+          body: >-
+            Lorsque l'impôt dépend du revenu, le module demande un seul taux
+            marginal que vous fixez une fois — pas un barème qu'il faudrait
+            appliquer à un revenu que Sure ne connaît pas.
+      supported_title: "Pays pris en charge"
+      your_country_unsupported: >-
+        Votre pays (%{country}) n'est pas encore modélisé, mais le mécanisme
+        ci-dessus s'applique quand même — vous pouvez créer vos propres règles
+        dans Paramètres → Impôts.
+      yours: "Le vôtre"
+      disclaimer: >-
+        Ces pages décrivent les règles intégrées. Les chiffres de votre rapport
+        sont des estimations, pas un conseil fiscal.
+    show:
+      subtitle: "Ce que Sure fait des comptes ici, au %{date}."
+      back: "← Tous les pays"
+      unsupported: "%{country} n'est pas encore un pays fiscal pris en charge."
+      coverage_title: "Ce qui arrive à chaque type de compte"
+      rates_title: "Taux"
+      rates_intro: >-
+        Chaque taux est daté ; le rapport utilise celui en vigueur à la date de
+        valorisation. Un foyer peut corriger n'importe lequel dans
+        Paramètres → Impôts.
+      rate_name: "Taux"
+      rate_current: "Actuel"
+      rate_schedule: "Historique"
+      from: "à partir du %{date}"
+      composite_note: "Somme de ses composantes ; corriger une composante se répercute."
+      products_title: "Plafonds des produits"
+      ceiling: "Plafond %{amount}"
+      maturity: "horloge de %{years} ans"
+      unmodelled_title: "Nommé mais non chiffré"
+      unmodelled_intro: >-
+        Ce que ce pays impose et que Sure ne calcule délibérément pas, parce que
+        cela dépend de faits qu'il ne détient pas. C'est nommé pour qu'un total
+        incomplet dise ce qui manque.
+      limits_title: "Hypothèses et limites"
+      limits:
+        marginal_rate: >-
+          Un seul taux marginal d'imposition, fixé une fois dans Impôts. Un
+          retrait assez important pour changer de tranche est sous-estimé, et le
+          rapport le dit.
+        holding_period: >-
+          Sure n'enregistre pas les durées de détention par lot ; le traitement
+          long terme est donc supposé là où un pays le distingue, et déclaré.
+        allowances: >-
+          Les abattements annuels qui s'appliquent une fois sur l'ensemble des
+          cessions (et non par compte) ne sont pas déduits ; chaque chiffre
+          indique qu'il les ignore.
+        one_currency: >-
+          Le rapport de chaque pays est établi dans sa propre devise et refuse
+          plutôt que de deviner lorsqu'il n'a pas de taux de change.
+      not_advice: >-
+        Ces chiffres sont des estimations pour vous aider à planifier. Ce n'est
+        pas un conseil fiscal.
+    classifications:
+      taxed:
+        label: "Imposé à la liquidation"
+        description: "Un impôt latent est estimé si ces comptes étaient vendus ou retirés aujourd'hui."
+      not_modelled:
+        label: "Nommé, non chiffré"
+        description: >-
+          Dans le périmètre mais non calculé : l'impôt dépend de faits que Sure
+          ne détient pas. Exclu du total.
+      exempt:
+        label: "Exonéré"
+        description: "Réellement non imposé en usage qualifié. Affiche zéro, et le pense."
+      cash:
+        label: "Liquidités"
+        description: >-
+          Retirer son propre solde n'est pas un fait imposable ; les intérêts
+          sont imposés au fil de l'eau, hors de ce rapport.
+      uncovered:
+        label: "Pas encore couvert"
+        description: "Aucune règle ne les rattache encore ; ils sont affichés sans impôt."

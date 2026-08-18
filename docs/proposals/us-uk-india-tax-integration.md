@@ -83,16 +83,52 @@ That is ~1 method on `RateTable` and a few lines in the portfolio pass — small
 but it does touch the core, so it is called out separately rather than smuggled
 into a country file.
 
+## "Tax countries" reference pages
+
+A new **Tax countries** page (`/tax_countries`) explains the general mechanism —
+the four principles (rates-as-data, unknown-never-zero, keyed-on-your-subtypes,
+one-stated-marginal-rate) — and lists every supported country. Each links to a
+**subpage** (`/tax_countries/:code`) that enumerates *everything handled locally*:
+
+- every account type grouped by what happens to it (taxed / named-not-valued /
+  exempt / cash / not-yet-covered), with the covered subtypes and, for
+  NotModelled wrappers, the reason;
+- the effective-dated rate schedule and composites, current value first;
+- product ceilings/maturities and the `unmodelled:` list;
+- the assumptions and limits (single marginal rate, holding-period assumed,
+  allowances not netted, one currency).
+
+The whole page is **generated from the engine** by `Tax::CountryGuide`, a pure
+PORO that reads `Tax::Registry.built_in` and the `RateTable` — so it cannot drift
+from what the report actually computes, and a new country's page appears the day
+its config/rules land, with no page to write. It is reachable by everyone,
+including families whose own country is not yet supported (a primary-nav entry
+plus a link from the report's "unsupported" state), because "here is what exists
+and yours isn't among it yet" is exactly what those users need.
+
+Files: `app/controllers/tax_countries_controller.rb`,
+`app/models/tax/country_guide.rb`, `app/helpers/tax_countries_helper.rb`,
+`app/views/tax_countries/{index,show}.html.erb`,
+`config/locales/views/tax_countries/{en,fr}.yml`, a route, and one nav line.
+Two tiny read accessors were added to the engine (`RateTable#unmodelled`,
+`NotModelled#reason`).
+
 ## Test status
 
 Run in this environment (bare Ruby, no Rails/DB needed):
 
 ```
 ruby -Itest test/models/tax/countries_engine_test.rb   # 12 runs, 0 failures
+ruby -Itest test/models/tax/country_guide_test.rb      # 7 runs, 0 failures
 ruby -Itest test/models/tax/engine_test.rb             # 80 runs, 0 failures (regression)
 ruby -Itest test/models/tax/formula_test.rb            # 46 runs, 0 failures
 ruby -Itest test/models/tax/rate_overlay_test.rb       # 25 runs, 0 failures
+ruby -Itest test/models/tax/rate_edit_test.rb          # 24 runs, 0 failures
 ```
+
+A Rails controller test (`test/controllers/tax_countries_controller_test.rb`)
+covers the index, per-country subpages, the unsupported redirect, and
+availability when the family's own country is unsupported — to be run in CI.
 
 Also verified in a bare process: all three YAML files load and resolve
 period-correct rates; all 17 new message keys render; every one has a French
